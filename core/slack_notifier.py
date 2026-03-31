@@ -1,0 +1,71 @@
+import httpx
+import logging
+import config
+
+logger = logging.getLogger(__name__)
+
+
+async def _send(text: str):
+    if not config.SLACK_WEBHOOK_URL:
+        logger.debug(f"Slack (no webhook configured): {text[:100]}")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(config.SLACK_WEBHOOK_URL, json={"text": text})
+    except httpx.HTTPError as e:
+        logger.error(f"Slack notification failed: {e}")
+
+
+async def notify_reply_sent(lead_email: str, campaign_name: str, category: str, confidence: float, prospect_text: str, agent_reply: str):
+    await _send(
+        f"📩 Reply išsiųstas | Kam: {lead_email} | Kampanija: {campaign_name} | "
+        f"Klasifikacija: {category} ({confidence:.0%}) | "
+        f"Prospektas: >{prospect_text[:150]} | Agentas: >{agent_reply[:150]}"
+    )
+
+
+async def notify_escalation(lead_email: str, campaign_name: str, reason: str, reply_text: str):
+    await _send(
+        f"⚠️ Reikia žmogaus | {lead_email} | {campaign_name} | "
+        f"Priežastis: {reason} | Žinutė: >{reply_text[:200]}"
+    )
+
+
+async def notify_unknown_campaign(campaign_id: str, lead_email: str):
+    await _send(
+        f"❓ Nežinoma kampanija | campaign_id: {campaign_id} | lead: {lead_email} | "
+        f"Reikia pridėti į kliento YAML"
+    )
+
+
+async def notify_meeting_booked(lead_email: str, campaign_name: str, time_str: str):
+    await _send(f"📅 Susitikimas suplanuotas! | {lead_email} | {campaign_name} | Laikas: {time_str}")
+
+
+async def notify_error(error_type: str, error_message: str):
+    await _send(f"🔴 Klaida | {error_type} | {error_message[:200]}")
+
+
+async def send_weekly_digest(stats: dict, week_start: str, week_end: str, confidence_old: float, confidence_new: float):
+    categories = stats.get("categories", {})
+    total = stats.get("total", 0)
+
+    cat_lines = []
+    for cat in ["INTERESTED", "QUESTION", "NOT_NOW", "REFERRAL", "UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"]:
+        n = categories.get(cat, 0)
+        pct = (n / total * 100) if total > 0 else 0
+        cat_lines.append(f"├ {cat}: {n} ({pct:.0f}%)")
+
+    meetings = stats.get("meetings_count", 0)
+    conv = (meetings / total * 100) if total > 0 else 0
+
+    text = (
+        f"📊 Savaitinė ataskaita ({week_start} — {week_end})\n\n"
+        f"📩 Iš viso reply'ų: {total}\n"
+        + "\n".join(cat_lines) + "\n\n"
+        f"📅 Susitikimai suplanuoti: {meetings}\n"
+        f"📈 Reply → Meeting: {conv:.0f}%\n\n"
+        f"👍 {stats.get('thumbs_up', 0)} | 👎 {stats.get('thumbs_down', 0)} | Override: {stats.get('override_count', 0)}\n\n"
+        f"🔧 Confidence threshold: {confidence_old} → {confidence_new}"
+    )
+    await _send(text)
