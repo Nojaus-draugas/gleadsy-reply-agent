@@ -1,0 +1,67 @@
+# Gleadsy Reply Agent — Client Configuration Template
+# Copy and rename this file to create a new client config
+# e.g., "my_client.yaml"
+
+client_id: "PLACEHOLDER_CLIENT_ID"
+client_name: "PLACEHOLDER_CLIENT_NAME"
+
+# List of Instantly.ai campaign UUIDs associated with this client
+campaigns:
+  - "PLACEHOLDER-CAMPAIGN-UUID"
+
+# Brief description of the client company
+company_description: |
+  PLACEHOLDER
+
+# What services you offer to this client
+service_offering: |
+  PLACEHOLDER
+
+# Your value proposition for this client
+value_proposition: |
+  PLACEHOLDER
+
+# Pricing model or cost structure
+pricing: |
+  PLACEHOLDER
+
+# Who is the ideal customer for this client's offering
+target_audience: |
+  PLACEHOLDER
+
+# Meeting scheduling configuration
+meeting:
+  participant_from_client: "PLACEHOLDER_NAME"
+  purpose: "PLACEHOLDER_MEETING_PURPOSE"
+  duration_minutes: 30
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+# Frequently asked questions and answers
+faq:
+  - question: "PLACEHOLDER_QUESTION"
+    answer: "PLACEHOLDER_ANSWER"
+
+# Boundaries and escalation rules
+boundaries:
+  cannot_promise:
+    - "PLACEHOLDER"
+  escalate_topics:
+    - "Legal"
+    - "Technical"
+
+# Tone and communication style
+tone:
+  formality: "semi-formal"
+  addressing: "Jūs"
+  language: "lt"
+  personality: "PLACEHOLDER"
+  max_reply_length_sentences: 5
+  sign_off: "Pagarbiai"
+  sender_name: "PLACEHOLDER_SENDER_NAME"
