@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-01T14:00:00.000Z",
+  "event_type": "reply_received",
+  "campaign_id": "test-campaign-uuid",
+  "campaign_name": "Gleadsy Q2 LT",
+  "lead_email": "tomas@verslas.lt",
+  "email_account": "paulius@gleadsy.lt",
+  "email_id": "notnow-email-uuid",
+  "reply_text": "Dabar ne, bet gal po mėnesio galėtume pakalbėti.",
+  "reply_subject": "Re: Daugiau klientų jūsų verslui"
+}

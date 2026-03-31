@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-01T15:00:00.000Z",
+  "event_type": "reply_received",
+  "campaign_id": "test-campaign-uuid",
+  "campaign_name": "Gleadsy Q2 LT",
+  "lead_email": "diana@istaiga.lt",
+  "email_account": "paulius@gleadsy.lt",
+  "email_id": "referral-email-uuid",
+  "reply_text": "Man tai neaktualu, bet parašykite mano kolegai Andriui - andrius@istaiga.lt",
+  "reply_subject": "Re: Daugiau klientų jūsų verslui"
+}
