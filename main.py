@@ -122,52 +122,128 @@ async def health():
 
 @app.get("/replies")
 async def replies_dashboard():
-    """Web dashboard showing all test mode replies."""
-    import csv
+    """Web dashboard showing all replies from DB with rating buttons and quality scores."""
     from fastapi.responses import HTMLResponse
-    csv_path = Path(__file__).parent / "test_replies.csv"
-    rows = []
-    if csv_path.exists():
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                rows.append(row)
-
     import html as html_mod
+
+    cursor = await db.execute(
+        "SELECT id, created_at, client_id, lead_email, classification, confidence, "
+        "prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary "
+        "FROM interactions ORDER BY created_at DESC LIMIT 200"
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+
     rows_html = ""
-    for r in reversed(rows):  # newest first
-        orig = html_mod.escape(r.get('Original message',''))
-        reply = html_mod.escape(r.get('Generated reply',''))
-        rows_html += f"""<tr>
-            <td>{html_mod.escape(r.get('Timestamp',''))}</td>
-            <td>{html_mod.escape(r.get('Client ID',''))}</td>
-            <td>{html_mod.escape(r.get('Lead email',''))}</td>
-            <td>{html_mod.escape(r.get('Classification',''))}</td>
-            <td>{html_mod.escape(r.get('Confidence',''))}</td>
-            <td style="max-width:400px;white-space:pre-wrap">{orig}</td>
-            <td style="max-width:400px;white-space:pre-wrap">{reply}</td>
-            <td>{html_mod.escape(r.get('Status',''))}</td>
+    for r in rows:
+        iid = r["id"]
+        orig = html_mod.escape(r.get("prospect_message") or "")
+        reply = html_mod.escape(r.get("agent_reply") or "")
+        classification = r.get("classification", "")
+        confidence = r.get("confidence", 0)
+        quality_score = r.get("quality_score")
+        quality_summary = html_mod.escape(r.get("quality_summary") or "")
+        rating = r.get("human_rating") or ""
+
+        # Classification badge color
+        cls_colors = {
+            "INTERESTED": "#2e7d32", "QUESTION": "#1565c0", "NOT_NOW": "#e65100",
+            "REFERRAL": "#6a1b9a", "UNSUBSCRIBE": "#c62828", "OUT_OF_OFFICE": "#757575",
+            "UNCERTAIN": "#f9a825",
+        }
+        cls_color = cls_colors.get(classification, "#333")
+
+        # Quality badge
+        if quality_score is not None:
+            if quality_score >= 8:
+                q_color, q_bg = "#2e7d32", "#e8f5e9"
+            elif quality_score >= 6:
+                q_color, q_bg = "#e65100", "#fff3e0"
+            else:
+                q_color, q_bg = "#c62828", "#ffebee"
+            quality_badge = f'<span class="badge" style="color:{q_color};background:{q_bg}" title="{quality_summary}">{quality_score}/10</span>'
+        else:
+            quality_badge = '<span class="badge" style="color:#999;background:#f5f5f5">-</span>'
+
+        # Rating buttons or result
+        if rating == "thumbs_up":
+            rating_html = '<span style="font-size:20px">&#128077;</span>'
+        elif rating == "thumbs_down":
+            rating_html = '<span style="font-size:20px">&#128078;</span>'
+        else:
+            rating_html = f'''<button class="rate-btn up" onclick="rate({iid},'thumbs_up')" title="Geras atsakymas">&#128077;</button>
+                <button class="rate-btn down" onclick="rate({iid},'thumbs_down')" title="Blogas atsakymas">&#128078;</button>'''
+
+        sent_icon = "&#9989;" if r.get("was_sent") else "&#128221;"
+
+        rows_html += f"""<tr id="row-{iid}">
+            <td>{html_mod.escape(str(r.get('created_at','')))}</td>
+            <td>{html_mod.escape(r.get('client_id',''))}</td>
+            <td>{html_mod.escape(r.get('lead_email',''))}</td>
+            <td><span class="badge" style="color:white;background:{cls_color}">{classification}</span></td>
+            <td>{confidence:.0%}</td>
+            <td>{quality_badge}</td>
+            <td class="msg-col">{orig}</td>
+            <td class="msg-col">{reply}</td>
+            <td style="text-align:center">{sent_icon}</td>
+            <td style="text-align:center;white-space:nowrap">{rating_html}</td>
         </tr>"""
 
+    total = len(rows)
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Gleadsy Reply Agent - Drafts</title>
+<html><head><meta charset="utf-8"><title>Gleadsy Reply Agent - Dashboard</title>
 <meta http-equiv="refresh" content="30">
 <style>
-body {{ font-family: -apple-system, sans-serif; margin: 20px; background: #f5f5f5; }}
-h1 {{ color: #333; }}
-table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-th {{ background: #4285f4; color: white; padding: 12px 8px; text-align: left; font-size: 13px; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
+h1 {{ color: #333; margin-bottom: 5px; }}
+table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }}
+th {{ background: #4285f4; color: white; padding: 12px 8px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; }}
 td {{ padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 13px; vertical-align: top; }}
 tr:hover {{ background: #f0f7ff; }}
-.badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }}
-.count {{ color: #666; font-size: 14px; margin: 10px 0; }}
+.badge {{ display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }}
+.count {{ color: #666; font-size: 14px; margin: 8px 0 16px; }}
+.msg-col {{ max-width: 350px; white-space: pre-wrap; word-break: break-word; }}
+.rate-btn {{ border: none; background: none; font-size: 18px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background 0.2s; }}
+.rate-btn:hover {{ background: #e3f2fd; }}
+.rate-btn.up:hover {{ background: #e8f5e9; }}
+.rate-btn.down:hover {{ background: #ffebee; }}
+.rated {{ animation: flash 0.5s; }}
+@keyframes flash {{ 0%,100% {{ background: inherit; }} 50% {{ background: #e8f5e9; }} }}
+.stats {{ display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }}
+.stat-card {{ background: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+.stat-card .number {{ font-size: 28px; font-weight: 700; color: #333; }}
+.stat-card .label {{ font-size: 12px; color: #888; text-transform: uppercase; }}
 </style></head><body>
-<h1>Gleadsy Reply Agent - Test Drafts</h1>
-<p class="count">{len(rows)} reply(-iai) | Auto-refresh kas 30s | TEST_MODE=true</p>
+<h1>Gleadsy Reply Agent</h1>
+<p class="count">Auto-refresh kas 30s | TEST_MODE=true</p>
+
+<div class="stats">
+    <div class="stat-card"><div class="number">{total}</div><div class="label">Reply'ai</div></div>
+</div>
+
 <table>
-<tr><th>Laikas</th><th>Klientas</th><th>Lead</th><th>Klasifikacija</th><th>Confidence</th><th>Originali zinute</th><th>Sugeneruotas atsakymas</th><th>Statusas</th></tr>
+<tr><th>Laikas</th><th>Klientas</th><th>Lead</th><th>Kategorija</th><th>Conf.</th><th>Quality</th><th>Lead zinute</th><th>Atsakymas</th><th>Sent</th><th>Vertinimas</th></tr>
 {rows_html}
-</table></body></html>"""
+</table>
+
+<script>
+async function rate(id, rating) {{
+    const row = document.getElementById('row-' + id);
+    try {{
+        const res = await fetch('/api/rate/' + id, {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{rating: rating}})
+        }});
+        if (res.ok) {{
+            const cell = row.querySelector('td:last-child');
+            cell.innerHTML = rating === 'thumbs_up' ? '<span style="font-size:20px">&#128077;</span>' : '<span style="font-size:20px">&#128078;</span>';
+            row.classList.add('rated');
+            setTimeout(() => row.classList.remove('rated'), 600);
+        }}
+    }} catch(e) {{ console.error('Rating failed:', e); }}
+}}
+</script>
+</body></html>"""
     return HTMLResponse(content=html)
 
 

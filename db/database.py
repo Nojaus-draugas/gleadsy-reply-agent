@@ -74,11 +74,28 @@ CREATE INDEX IF NOT EXISTS idx_interactions_email_id ON interactions(email_id);
 """
 
 
+MIGRATIONS = [
+    "ALTER TABLE interactions ADD COLUMN quality_score INTEGER",
+    "ALTER TABLE interactions ADD COLUMN quality_issues TEXT",
+    "ALTER TABLE interactions ADD COLUMN quality_summary TEXT",
+]
+
+
+async def _run_migrations(conn: aiosqlite.Connection):
+    for sql in MIGRATIONS:
+        try:
+            await conn.execute(sql)
+        except Exception:
+            pass  # Column already exists
+    await conn.commit()
+
+
 async def init_db(db_path: Path) -> aiosqlite.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(str(db_path))
     conn.row_factory = aiosqlite.Row
     await conn.executescript(SCHEMA)
+    await _run_migrations(conn)
     await conn.commit()
     return conn
 
@@ -89,8 +106,9 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
         (campaign_id, campaign_name, lead_email, email_account, email_id,
          client_id, prospect_message, classification, confidence,
          classification_reasoning, agent_reply, was_sent, matched_faq_index,
-         faq_confidence, offered_slots, few_shots_used, thread_position, brief_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
+         quality_score, quality_issues, quality_summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["campaign_id"], data.get("campaign_name"), data["lead_email"],
             data.get("email_account"), data["email_id"], data["client_id"],
@@ -100,6 +118,8 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
             data.get("faq_confidence"), data.get("offered_slots"),
             data.get("few_shots_used"), data.get("thread_position", 1),
             data.get("brief_version"),
+            data.get("quality_score"), data.get("quality_issues"),
+            data.get("quality_summary"),
         ),
     )
     await conn.commit()

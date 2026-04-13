@@ -6,6 +6,7 @@ from core.calendar_manager import get_free_slots, create_meeting_event, format_s
 from core.instantly_client import send_reply
 from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error
 from core.self_improver import get_best_examples, get_anti_patterns
+from core.quality_reviewer import review_quality
 from core.client_loader import get_client_by_campaign
 from db.database import (
     is_duplicate, reply_sent_within_cooldown, get_thread_reply_count,
@@ -301,6 +302,43 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
         matching_faq=matching_faq,
     )
 
+    # 12b. Quality review
+    quality = await review_quality(
+        prospect_message=reply_text,
+        classification=classification.category,
+        generated_reply=agent_reply,
+        client_name=client_config.get("client_name", client_id),
+    )
+    logger.info(f"Quality review for {lead_email}: score={quality.score}/10 passed={quality.passed}")
+
+    if not quality.passed:
+        if config.TEST_MODE:
+            log_test_reply(
+                campaign_name=payload.get("campaign_name", ""), client_id=client_id,
+                lead_email=lead_email, company=payload.get("company_name", ""),
+                original_message=reply_text, classification=classification.category,
+                confidence=classification.confidence,
+                generated_reply=agent_reply,
+                sending_account=payload.get("email_account", ""),
+                status=f"quality_failed ({quality.score}/10)",
+            )
+        notify_escalation_email(lead_email, client_id, classification.category,
+                               classification.confidence, reply_text,
+                               f"Quality check failed ({quality.score}/10): {quality.summary}")
+        await notify_escalation(lead_email, payload.get("campaign_name", ""),
+                               f"quality failed ({quality.score}/10): {'; '.join(quality.issues[:2])}", reply_text)
+        iid = await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": classification.category,
+            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "agent_reply": agent_reply, "was_sent": False, "thread_position": thread_position,
+            "quality_score": quality.score, "quality_issues": json.dumps(quality.issues, ensure_ascii=False),
+            "quality_summary": quality.summary,
+        })
+        return {"status": "quality_failed", "interaction_id": iid, "quality_score": quality.score}
+
     # 13. Send via Instantly (or log to Sheets in TEST_MODE)
     if config.TEST_MODE:
         log_test_reply(
@@ -313,7 +351,7 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
             confidence=classification.confidence,
             generated_reply=agent_reply,
             sending_account=payload.get("email_account", ""),
-            status="test_mode",
+            status=f"test_mode (quality: {quality.score}/10)",
         )
         if classification.category == "INTERESTED":
             notify_interested_email(lead_email, client_id, reply_text, agent_reply)
@@ -346,6 +384,8 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
         "offered_slots": offered_slots_json,
         "few_shots_used": json.dumps([fs["id"] for fs in few_shots]) if few_shots else None,
         "thread_position": thread_position,
+        "quality_score": quality.score, "quality_issues": json.dumps(quality.issues, ensure_ascii=False),
+        "quality_summary": quality.summary,
     })
 
     # 15. Slack notification
