@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
@@ -228,7 +228,7 @@ async def login_page(request: Request):
     """Show login form for dashboard access."""
     from fastapi.responses import HTMLResponse
     if not config.DASHBOARD_PASSWORD or _get_dashboard_session(request):
-        return HTMLResponse(status_code=302, headers={"Location": "/replies"})
+        return RedirectResponse(url="/replies", status_code=302)
     html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Gleadsy - Login</title>
 <style>
@@ -258,7 +258,7 @@ async def login_submit(request: Request):
     form = await request.form()
     password = form.get("password", "")
     if config.DASHBOARD_PASSWORD and secrets.compare_digest(password, config.DASHBOARD_PASSWORD):
-        response = HTMLResponse(status_code=302, headers={"Location": "/replies"})
+        response = RedirectResponse(url="/replies", status_code=302)
         response.set_cookie("gleadsy_session", _session_token, httponly=True, samesite="lax", max_age=86400 * 7)
         return response
     # Wrong password — show login with error
@@ -293,7 +293,7 @@ async def replies_dashboard(request: Request):
 
     # Auth check
     if not _get_dashboard_session(request):
-        return HTMLResponse(status_code=302, headers={"Location": "/login"})
+        return RedirectResponse(url="/login", status_code=302)
 
     cursor = await db.execute(
         "SELECT id, created_at, client_id, lead_email, classification, confidence, "
@@ -421,7 +421,7 @@ async def answer_form(interaction_id: int, request: Request):
     """Show form to answer an unknown question."""
     from fastapi.responses import HTMLResponse
     if not _get_dashboard_session(request):
-        return HTMLResponse(status_code=302, headers={"Location": "/login"})
+        return RedirectResponse(url="/login", status_code=302)
     cursor = await db.execute(
         "SELECT lead_email, client_id, prospect_message, classification FROM interactions WHERE id = ?",
         (interaction_id,)
