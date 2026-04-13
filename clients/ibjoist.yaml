@@ -1,0 +1,97 @@
+# gleadsy-reply-agent/clients/ibjoist.yaml
+client_id: "ibjoist"
+client_name: "IBJOIST"
+
+campaigns:
+  - "c7d5396f-197f-446f-a344-913217401e23"   # IBjoist - stogdengiai
+  - "b16aea0f-2dce-42f0-8ba3-013a1181bdef"   # IBjoist - kitos statybos veiklos
+
+company_description: |
+  IBJOIST — lietuviška medinių I-sijų gamintoja. Gamina OSB I-sijas
+  stogams, perdangoms ir sienoms. Gamyba Lietuvoje, tiekimas visoje
+  Europoje, daugiausia Skandinavijos ir Vakarų Europos rinkoms.
+
+service_offering: |
+  Medinės I-sijos įvairių aukščių (H-200 iki H-450):
+  - Stogų konstrukcijoms
+  - Perdangų konstrukcijoms
+  - Sienų rėmams
+  Pilnas tiekimas nuo užsakymo iki pristatymo, gamyba iki 4 savaičių.
+
+value_proposition: |
+  I-sijos yra 40% lengvesnės nei masyvios medienos sijos, tikslių matmenų,
+  netraukia, neskyla ir neišsikraipo. Tarpatramiai iki 12m be tarpinių atramų.
+  Gamyba Lietuvoje — trumpi pristatymo terminai ir konkurencingos kainos.
+
+pricing: |
+  Kainos nuo 5,50 €/m iki 10,90 €/m (+PVM), priklauso nuo sijos aukščio.
+  Pristatymas Lietuvoje aptariamas individualiai.
+  Tikslesnę kainą pateikiame pagal konkretų užsakymą.
+
+target_audience: |
+  Statybos įmonės, stogdengiai, rangovai ir individualių namų statytojai
+  Lietuvoje, kuriems reikia stogo ar perdangų sijų.
+
+meeting:
+  participant_from_client: "Paulius, IBJOIST"
+  purpose: "Aptarti jūsų projekto poreikius ir pateikti I-sijų pasiūlymą"
+  duration_minutes: 30
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+faq:
+  - question: "Kiek kainuoja I-sijos?"
+    answer: |
+      Kainos nuo 5,50 €/m, priklauso nuo sijos aukščio ir kiekio.
+      Parašykite kokio aukščio ir kiek metrų reikia — paruošime tikslų pasiūlymą.
+  - question: "Per kiek laiko pagaminsite?"
+    answer: |
+      Standartinis gamybos terminas — iki 4 savaičių nuo užsakymo patvirtinimo.
+      Tiksliau priklauso nuo užsakymo apimties.
+  - question: "Koks minimalus užsakymas?"
+    answer: |
+      Dirbame tiek su vienkartiniais, tiek su nuolatiniais užsakymais.
+      Susisiekite — aptarsime pagal jūsų projekto poreikius.
+  - question: "Ar pristatote?"
+    answer: |
+      Taip, pristatome visoje Lietuvoje. Pristatymo sąlygos aptariamos
+      individualiai pagal užsakymą.
+  - question: "Kuo I-sijos geresnės nei masyvios medienos sijos?"
+    answer: |
+      I-sijos 40% lengvesnės, tikslių matmenų, netraukia ir neišsikraipo.
+      Galima pasiekti iki 12m tarpatramius be tarpinių atramų.
+  - question: "Ar galite atsiųsti techninę dokumentaciją?"
+    answer: |
+      Taip, galime atsiųsti technines specifikacijas ir sertifikatus.
+      Geriausia būtų aptarti per trumpą pokalbį — galėtume patarti
+      tinkamiausią sprendimą jūsų projektui.
+
+boundaries:
+  cannot_promise:
+    - "Tikslių kainų be žinant kiekio ir sijos tipo"
+    - "Terminų trumpesnių nei standartinis be atskiro aptarimo"
+    - "Montavimo paslaugų — tik tiekiame medžiagas"
+  escalate_topics:
+    - "Teisiniai klausimai"
+    - "Skundai ar pretenzijos dėl kokybės"
+    - "Labai dideli užsakymai — reikia atskiro aptarimo"
+    - "Techniniai skaičiavimai ir projektavimas"
+    - "Eksporto užsakymai į užsienį"
+
+tone:
+  formality: "semi-formal"
+  addressing: "Jūs"
+  language: "lt"
+  personality: |
+    Dalykiškas ir konkretus. Kalba statybininkų kalba — apie matmenis,
+    kainas, terminus. Neverčia, bet aiškiai siūlo kitą žingsnį.
+    Trumpi sakiniai. Vengia korporatyvinio žargono.
+  max_reply_length_sentences: 5
+  sign_off: "Pagarbiai"
+  sender_name: "Paulius"

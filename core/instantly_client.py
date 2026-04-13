@@ -49,35 +49,55 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
 
 
 async def poll_for_replies(since_timestamp: str) -> list[dict]:
-    """Poll Instantly for new replies since given timestamp. Returns webhook-compatible payloads."""
+    """Poll Instantly for new replies since given timestamp. Returns webhook-compatible payloads.
+    Handles pagination via next_starting_after cursor."""
+    all_replies = []
+    starting_after = None
+
     async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            response = await client.get(
-                f"{BASE_URL}/emails",
-                params={
+        while True:
+            try:
+                params = {
                     "workspace_id": config.INSTANTLY_WORKSPACE_ID,
                     "timestamp_created_after": since_timestamp,
                     "email_type": "received",
-                },
-                headers=_headers(),
-            )
-            response.raise_for_status()
-            data = response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Instantly polling error: {e}")
-            return []
+                    "limit": 100,
+                }
+                if starting_after:
+                    params["starting_after"] = starting_after
 
-    replies = []
-    for email in data.get("data", []):
-        replies.append({
-            "event_type": "reply_received",
-            "campaign_id": email.get("campaign_id", ""),
-            "campaign_name": email.get("campaign_name", ""),
-            "lead_email": email.get("from_address", ""),
-            "email_account": email.get("to_address", ""),
-            "email_id": email.get("id", ""),
-            "reply_text": email.get("body", {}).get("text", ""),
-            "reply_subject": email.get("subject", ""),
-            "timestamp": email.get("timestamp_created", ""),
-        })
-    return replies
+                response = await client.get(
+                    f"{BASE_URL}/emails",
+                    params=params,
+                    headers=_headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                logger.error(f"Instantly polling error: {e}")
+                break
+
+            items = data.get("items", data.get("data", []))
+            for email in items:
+                body = email.get("body", {})
+                reply_text = body.get("text", "") if isinstance(body, dict) else str(body)
+                all_replies.append({
+                    "event_type": "reply_received",
+                    "campaign_id": email.get("campaign_id", ""),
+                    "campaign_name": "",  # API v2 doesn't return campaign_name
+                    "lead_email": email.get("from_address_email", email.get("lead", "")),
+                    "email_account": email.get("eaccount", email.get("to_address_email_list", "")),
+                    "email_id": email.get("id", ""),
+                    "reply_text": reply_text,
+                    "reply_subject": email.get("subject", ""),
+                    "timestamp": email.get("timestamp_created", ""),
+                })
+
+            # Pagination: follow next_starting_after cursor
+            starting_after = data.get("next_starting_after")
+            if not starting_after or not items:
+                break
+
+    if all_replies:
+        logger.info(f"Polled {len(all_replies)} new replies from Instantly")
+    return all_replies

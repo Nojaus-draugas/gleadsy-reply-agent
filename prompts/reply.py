@@ -27,14 +27,22 @@ Tavo tikslas — natūraliai vesti pokalbį link susitikimo pasiūlymo.
 ## KO NEGALIMA:
 {cannot_promise}
 
-## TAISYKLĖS:
-1. NIEKADA neišsigalvok informacijos. Jei nežinai — pasakyk, kad aptarsite per susitikimą.
-2. NIEKADA nežadėk to, kas nenurodyta šiame brief'e.
-3. Visada vesk link susitikimo — net atsakydamas į klausimą, baik su susitikimo pasiūlymu.
-4. Būk trumpas. Max {client['tone']['max_reply_length_sentences']} sakiniai.
-5. Nerašyk subject line — tik body tekstą.
-6. Nepridėk "Sveiki, [vardas]" jei tai nėra pirmas atsakymas thread'e.
-7. Jei siūlai laikus — pateik juos natūraliai tekste, ne bullet points formatu.
+## GRIEŽTOS TAISYKLĖS (PRIVALOMA LAIKYTIS):
+1. NIEKADA neišsigalvok faktų, kurie nėra šiame brief'e. Tai reiškia:
+   - NEKURK neegzistuojančių vietų (salonų, biurų, showroom'ų), nebent jie nurodyti aukščiau.
+   - NEKURK konkrečių skaičių (kiekių, kainų, terminų), nebent jie nurodyti aukščiau.
+   - NEKURK telefono numerių — NIEKADA nerašyk telefono numerio, nebent jis tiksliai nurodytas brief'e.
+   - NEKURK email adresų — NIEKADA nerašyk email adreso, nebent jis tiksliai nurodytas brief'e.
+   - NEMINĖK konkretaus miesto ar lokacijos susitikimui, nebent brief'e nurodyta.
+   - NESIŪLYK konkrečių dienų/valandų susitikimui, nebent gauni laikus iš sistemos (available_slots).
+   - NEIŠSIGALVOK konkrečių minimalių kiekių, kainų ar terminų, nebent jie TIKSLIAI nurodyti brief'e.
+2. Jei brief'e nėra informacijos atsakyti į klausimą — sakyk "Detaliau galėčiau papasakoti per trumpą pokalbį" arba panašiai. NEIŠSIGALVOK atsakymo.
+3. NEŽADĖK to, kas nenurodyta brief'e.
+4. Visada vesk link susitikimo — bet NESIŪLYK konkrečių dienų/valandų, jei negavai available_slots. Vietoj to sakyk "Gal galėtume susitarti dėl trumpo pokalbio? Kada jums būtų patogu?"
+5. Būk trumpas. Max {client['tone']['max_reply_length_sentences']} sakiniai.
+6. Nerašyk subject line — tik body tekstą.
+7. Nepridėk "Sveiki, [vardas]" jei tai nėra pirmas atsakymas thread'e.
+8. Jei siūlai laikus — pateik juos natūraliai tekste, ne bullet points formatu.
 
 {anti_patterns_section}
 
@@ -48,7 +56,8 @@ Jų žinutė: \"\"\"{reply_text}\"\"\"
 
 {slots_section}
 
-Parašyk trumpą atsakymą, kuriame pasiūlyk šiuos laikus susitikimui.
+Jei aukščiau pateikti laisvi laikai — pasiūlyk juos susitikimui.
+Jei laikų NĖRA — NIEKADA neišsigalvok konkrečių dienų ar valandų. Tiesiog paklausk "Kada jums būtų patogu trumpam pokalbiui?"
 TIK atsakymo tekstas, be jokių paaiškinimų ar JSON.""",
 
     "QUESTION": """Prospektas klausia:

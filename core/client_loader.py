@@ -29,6 +29,10 @@ def load_clients(clients_dir: Path) -> dict:
 def get_client_by_campaign(clients: dict, campaign_id: str) -> dict | None:
     """Find client config by Instantly campaign UUID."""
     for client in clients.values():
-        if campaign_id in client.get("campaigns", []):
-            return client
+        campaigns = client.get("campaigns", [])
+        for camp in campaigns:
+            # Support both dict format {"id": "...", "name": "..."} and plain string
+            camp_id = camp["id"] if isinstance(camp, dict) else camp
+            if camp_id == campaign_id:
+                return client
     return None

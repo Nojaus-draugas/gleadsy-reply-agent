@@ -1,0 +1,91 @@
+# gleadsy-reply-agent/clients/puoskio-spauda.yaml
+client_id: "puoskio-spauda"
+client_name: "Puoškio Spauda"
+
+campaigns:
+  - "ec8d8f52-5d91-400c-9d75-673431fc6b47"
+
+company_description: |
+  Puoškio Spauda — lietuviška tekstilės spausdinimo įmonė, specializuojasi
+  individualioje spauda ant sportinės aprangos: marškinėlių, formų, treningų,
+  liemenių ir kitos sporto tekstilės. Dirbame su komandoms, klubams ir studijoms
+  visoje Lietuvoje.
+
+service_offering: |
+  Logotipų ir dizainų spausdinimas ant sportinės aprangos:
+  marškinėlių, uniformų, treningų, šortelių ir kitos tekstilės.
+  Teikiame visą paslaugą — nuo dizaino parengimo iki gatavo produkto pristatymo.
+
+value_proposition: |
+  Greitas terminas, kokybiška spauda ir galimybė užsakyti net nuo mažo kiekio.
+  Jūsų studija ar komanda atrodys profesionaliai ir vieningai.
+
+pricing: |
+  Kaina priklauso nuo kiekio, spausdinimo būdo ir aprangos tipo.
+  Konkrečią kainą pateikiame pagal užklausą — tiesiog parašykite kiek vienetų
+  ir kokio tipo apranga jums reikia.
+
+target_audience: |
+  Šokio ir sporto studijų vadovai Lietuvoje, ieškantys vienodų formų
+  savo mokiniams ar sportininkams.
+
+meeting:
+  participant_from_client: "Paulius, Puoškio Spauda įkūrėjas"
+  purpose: "Aptarti jūsų studijos aprangos poreikius ir paruošti pasiūlymą"
+  duration_minutes: 30
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+faq:
+  - question: "Kiek tai kainuoja?"
+    answer: |
+      Kaina priklauso nuo kiekio ir aprangos tipo. Kuo daugiau vienetų —
+      tuo geresnė kaina. Parašykite apytikslį kiekį ir paruošime pasiūlymą.
+  - question: "Koks minimalus užsakymas?"
+    answer: |
+      Dirbame ir su mažais kiekiais — galima užsisakyti jau nuo kelių vienetų.
+      Tiksli minimali riba priklauso nuo pasirinkto produkto.
+  - question: "Per kiek laiko pagaminsite?"
+    answer: |
+      Standartinis terminas — 7–14 darbo dienų nuo dizaino patvirtinimo.
+      Skubūs užsakymai galimi atskirai aptarus.
+  - question: "Ar galite padėti su dizainu?"
+    answer: |
+      Taip! Galime pritaikyti jūsų logotipą ar dizainą spausdinimui.
+      Jei dar neturite — galime pasiūlyti paprastą variantą.
+  - question: "Kokia spausdinimo kokybė?"
+    answer: |
+      Naudojame aukštos kokybės spausdinimo technologijas, atsparias
+      dažnam plovimui — svarbu sportinei aprangai.
+  - question: "Ar pristatote į visą Lietuvą?"
+    answer: |
+      Taip, pristatome į visą Lietuvą. Pristatymo sąlygos aptariamos
+      užsakymo metu.
+
+boundaries:
+  cannot_promise:
+    - "Konkrečios kainos be žinant kiekio ir aprangos tipo"
+    - "Terminų trumpesnių nei standartinis be atskiro aptarimo"
+    - "Dizaino paslaugų, kurios neįeina į standartinį paketą"
+  escalate_topics:
+    - "Teisiniai klausimai"
+    - "Skundai ar pretenzijos dėl kokybės"
+    - "Labai dideli užsakymai (500+ vnt.) — reikia atskiro aptarimo"
+    - "Prašymai susisiekti su konkrečiu žmogumi"
+
+tone:
+  formality: "semi-formal"
+  addressing: "Jūs"
+  language: "lt"
+  personality: |
+    Draugiškas ir konkretus. Kalba apie praktinius dalykus — kiekius, terminus,
+    kainas. Neverčia, bet aiškiai siūlo kitą žingsnį. Trumpi sakiniai.
+  max_reply_length_sentences: 5
+  sign_off: "Pagarbiai"
+  sender_name: "Paulius"

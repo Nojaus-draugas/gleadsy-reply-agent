@@ -3,7 +3,12 @@ client_id: "gleadsy"
 client_name: "Gleadsy"
 
 campaigns:
-  - "PLACEHOLDER-CAMPAIGN-UUID"
+  - "05318bc6-1e24-44f1-ad2a-18ed43b8456b"
+  - "12c5d947-b5bc-4f1c-81b2-f436de85612f"
+  - "c22500fc-fd03-438a-9fa7-c5ee30b0b59a"
+  - "d01d710f-6e11-4229-84a5-7309e26c4f4c"
+  - "0efe24ae-beeb-4a01-9e3f-96cfc935b983"
+  - "0fdebc28-500f-476d-9e62-6d244e35904d"
 
 company_description: |
   Gleadsy — digital marketing agentūra, padedanti B2B įmonėms
