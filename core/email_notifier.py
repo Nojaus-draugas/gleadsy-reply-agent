@@ -50,7 +50,7 @@ def notify_escalation_email(lead_email: str, client_id: str, classification: str
         <h3 style="color: #333; margin-top: 20px;">Originali žinutė:</h3>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #e65100; white-space: pre-wrap;">{original_message}</div>
         <p style="margin-top: 20px; color: #888; font-size: 12px;">
-            <a href="http://localhost:8000/replies">Atidaryti dashboard</a>
+            <a href="{config.DASHBOARD_BASE_URL}/replies">Atidaryti dashboard</a>
         </p>
     </div>
     """
@@ -74,7 +74,7 @@ def notify_interested_email(lead_email: str, client_id: str, original_message: s
         <h3 style="color: #333; margin-top: 20px;">Sugeneruotas atsakymas (draft):</h3>
         <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; white-space: pre-wrap;">{generated_reply}</div>
         <p style="margin-top: 20px; color: #888; font-size: 12px;">
-            <a href="http://localhost:8000/replies">Atidaryti dashboard</a>
+            <a href="{config.DASHBOARD_BASE_URL}/replies">Atidaryti dashboard</a>
         </p>
     </div>
     """
@@ -84,7 +84,7 @@ def notify_interested_email(lead_email: str, client_id: str, original_message: s
 def notify_unknown_question_email(lead_email: str, client_id: str, question: str, interaction_id: int):
     """Notify about question that FAQ can't answer. Ask human for answer."""
     subject = f"❓ Gleadsy: nežinomas klausimas — {lead_email}"
-    answer_url = f"http://localhost:8000/answer/{interaction_id}"
+    answer_url = f"{config.DASHBOARD_BASE_URL}/answer/{interaction_id}"
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #1565c0;">❓ Lead'as uždavė klausimą, kurio neturiu FAQ</h2>

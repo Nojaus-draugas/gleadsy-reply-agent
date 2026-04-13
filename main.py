@@ -285,23 +285,97 @@ button:hover { background: #3367d6; }
     return HTMLResponse(content=html, status_code=401)
 
 
+@app.post("/logout")
+async def logout():
+    """Clear session and redirect to login."""
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("gleadsy_session")
+    return response
+
+
 @app.get("/replies")
 async def replies_dashboard(request: Request):
-    """Web dashboard showing all replies from DB with rating buttons and quality scores."""
+    """Web dashboard showing all replies from DB with rating buttons, stats, and filters."""
     from fastapi.responses import HTMLResponse
     import html as html_mod
+    from urllib.parse import urlencode
 
     # Auth check
     if not _get_dashboard_session(request):
         return RedirectResponse(url="/login", status_code=302)
 
+    # --- Filters ---
+    filter_client = request.query_params.get("client", "")
+    filter_date_from = request.query_params.get("from", "")
+    filter_date_to = request.query_params.get("to", "")
+    page = max(1, int(request.query_params.get("page", "1")))
+    per_page = 50
+
+    where_clauses = []
+    params = []
+    if filter_client:
+        where_clauses.append("client_id = ?")
+        params.append(filter_client)
+    if filter_date_from:
+        where_clauses.append("created_at >= ?")
+        params.append(filter_date_from)
+    if filter_date_to:
+        where_clauses.append("created_at <= ?")
+        params.append(filter_date_to + " 23:59:59")
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    # Total count for pagination
+    cursor = await db.execute(f"SELECT COUNT(*) FROM interactions{where_sql}", params)
+    total_count = (await cursor.fetchone())[0]
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    offset = (page - 1) * per_page
+
+    # Fetch rows
     cursor = await db.execute(
-        "SELECT id, created_at, client_id, lead_email, classification, confidence, "
-        "prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary "
-        "FROM interactions ORDER BY created_at DESC LIMIT 200"
+        f"SELECT id, created_at, client_id, lead_email, campaign_id, classification, confidence, "
+        f"prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary "
+        f"FROM interactions{where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [per_page, offset],
     )
     rows = [dict(r) for r in await cursor.fetchall()]
 
+    # --- Stats (over filtered set) ---
+    cursor = await db.execute(
+        f"SELECT COUNT(*) as total, "
+        f"SUM(CASE WHEN was_sent = 1 THEN 1 ELSE 0 END) as sent, "
+        f"AVG(CASE WHEN quality_score IS NOT NULL THEN quality_score END) as avg_quality "
+        f"FROM interactions{where_sql}", params,
+    )
+    stats_row = dict(await cursor.fetchone())
+    stat_total = stats_row["total"] or 0
+    stat_sent = stats_row["sent"] or 0
+    stat_sent_pct = f"{stat_sent / stat_total * 100:.0f}%" if stat_total > 0 else "0%"
+    stat_avg_quality = f"{stats_row['avg_quality']:.1f}" if stats_row["avg_quality"] else "-"
+
+    cursor = await db.execute(
+        f"SELECT classification, COUNT(*) as cnt FROM interactions{where_sql} GROUP BY classification",
+        params,
+    )
+    cls_counts = {row["classification"]: row["cnt"] for row in await cursor.fetchall()}
+
+    # Classification mini-chart
+    cls_colors_map = {
+        "INTERESTED": "#2e7d32", "QUESTION": "#1565c0", "NOT_NOW": "#e65100",
+        "REFERRAL": "#6a1b9a", "UNSUBSCRIBE": "#c62828", "OUT_OF_OFFICE": "#757575",
+        "UNCERTAIN": "#f9a825", "API_ERROR": "#d32f2f",
+    }
+    cls_badges_html = " ".join(
+        f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;'
+        f'color:white;background:{cls_colors_map.get(c, "#333")};margin:2px">{c}: {n}</span>'
+        for c, n in sorted(cls_counts.items(), key=lambda x: -x[1])
+    )
+
+    # Available clients for filter dropdown
+    cursor = await db.execute("SELECT DISTINCT client_id FROM interactions ORDER BY client_id")
+    available_clients = [row["client_id"] for row in await cursor.fetchall()]
+
+    # --- Build table rows ---
     rows_html = ""
     for r in rows:
         iid = r["id"]
@@ -312,14 +386,10 @@ async def replies_dashboard(request: Request):
         quality_score = r.get("quality_score")
         quality_summary = html_mod.escape(r.get("quality_summary") or "")
         rating = r.get("human_rating") or ""
+        lead_email = html_mod.escape(r.get("lead_email", ""))
+        campaign_id = r.get("campaign_id", "")
 
-        # Classification badge color
-        cls_colors = {
-            "INTERESTED": "#2e7d32", "QUESTION": "#1565c0", "NOT_NOW": "#e65100",
-            "REFERRAL": "#6a1b9a", "UNSUBSCRIBE": "#c62828", "OUT_OF_OFFICE": "#757575",
-            "UNCERTAIN": "#f9a825",
-        }
-        cls_color = cls_colors.get(classification, "#333")
+        cls_color = cls_colors_map.get(classification, "#333")
 
         # Quality badge
         if quality_score is not None:
@@ -344,10 +414,13 @@ async def replies_dashboard(request: Request):
 
         sent_icon = "&#9989;" if r.get("was_sent") else "&#128221;"
 
+        # Lead email links to conversation view
+        lead_link = f'<a href="/conversation/{lead_email}/{campaign_id}" style="color:#1565c0;text-decoration:none" title="Rodyti visa pokalbio gija">{lead_email}</a>'
+
         rows_html += f"""<tr id="row-{iid}">
             <td>{html_mod.escape(str(r.get('created_at','')))}</td>
             <td>{html_mod.escape(r.get('client_id',''))}</td>
-            <td>{html_mod.escape(r.get('lead_email',''))}</td>
+            <td>{lead_link}</td>
             <td><span class="badge" style="color:white;background:{cls_color}">{classification}</span></td>
             <td>{confidence:.0%}</td>
             <td>{quality_badge}</td>
@@ -357,19 +430,49 @@ async def replies_dashboard(request: Request):
             <td style="text-align:center;white-space:nowrap">{rating_html}</td>
         </tr>"""
 
-    total = len(rows)
+    # --- Pagination links ---
+    def _page_url(p):
+        qp = {}
+        if filter_client:
+            qp["client"] = filter_client
+        if filter_date_from:
+            qp["from"] = filter_date_from
+        if filter_date_to:
+            qp["to"] = filter_date_to
+        qp["page"] = p
+        return f"/replies?{urlencode(qp)}"
+
+    pagination_html = '<div class="pagination">'
+    if page > 1:
+        pagination_html += f'<a href="{_page_url(page - 1)}">&laquo; Ankstesnis</a>'
+    pagination_html += f'<span class="page-info">Puslapis {page} / {total_pages} ({total_count} viso)</span>'
+    if page < total_pages:
+        pagination_html += f'<a href="{_page_url(page + 1)}">Kitas &raquo;</a>'
+    pagination_html += '</div>'
+
+    # Client filter options
+    client_options = '<option value="">Visi klientai</option>'
+    for c in available_clients:
+        selected = ' selected' if c == filter_client else ''
+        client_options += f'<option value="{html_mod.escape(c)}"{selected}>{html_mod.escape(c)}</option>'
+
+    test_mode_label = "TEST_MODE" if config.TEST_MODE else "LIVE"
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Gleadsy Reply Agent - Dashboard</title>
 <meta http-equiv="refresh" content="30">
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
-h1 {{ color: #333; margin-bottom: 5px; }}
+.header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+h1 {{ color: #333; margin: 0; }}
+.logout-btn {{ padding: 8px 16px; background: #e0e0e0; color: #333; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }}
+.logout-btn:hover {{ background: #bdbdbd; }}
 table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }}
 th {{ background: #4285f4; color: white; padding: 12px 8px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; }}
 td {{ padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 13px; vertical-align: top; }}
 tr:hover {{ background: #f0f7ff; }}
 .badge {{ display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }}
-.count {{ color: #666; font-size: 14px; margin: 8px 0 16px; }}
+.count {{ color: #666; font-size: 14px; margin: 4px 0 12px; }}
 .msg-col {{ max-width: 350px; white-space: pre-wrap; word-break: break-word; }}
 .rate-btn {{ border: none; background: none; font-size: 18px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background 0.2s; }}
 .rate-btn:hover {{ background: #e3f2fd; }}
@@ -377,22 +480,59 @@ tr:hover {{ background: #f0f7ff; }}
 .rate-btn.down:hover {{ background: #ffebee; }}
 .rated {{ animation: flash 0.5s; }}
 @keyframes flash {{ 0%,100% {{ background: inherit; }} 50% {{ background: #e8f5e9; }} }}
-.stats {{ display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }}
-.stat-card {{ background: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-.stat-card .number {{ font-size: 28px; font-weight: 700; color: #333; }}
-.stat-card .label {{ font-size: 12px; color: #888; text-transform: uppercase; }}
+.stats {{ display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }}
+.stat-card {{ background: white; padding: 14px 22px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 100px; }}
+.stat-card .number {{ font-size: 26px; font-weight: 700; color: #333; }}
+.stat-card .label {{ font-size: 11px; color: #888; text-transform: uppercase; margin-top: 2px; }}
+.filters {{ background: white; padding: 14px 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+.filters label {{ font-size: 12px; color: #666; font-weight: 600; text-transform: uppercase; }}
+.filters select, .filters input {{ padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }}
+.filters button {{ padding: 6px 16px; background: #4285f4; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }}
+.filters button:hover {{ background: #3367d6; }}
+.filters .reset {{ background: #e0e0e0; color: #333; }}
+.filters .reset:hover {{ background: #bdbdbd; }}
+.cls-breakdown {{ background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }}
+.pagination {{ display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px; padding: 12px; }}
+.pagination a {{ padding: 6px 14px; background: #4285f4; color: white; border-radius: 6px; text-decoration: none; font-size: 13px; }}
+.pagination a:hover {{ background: #3367d6; }}
+.page-info {{ font-size: 13px; color: #666; }}
 </style></head><body>
-<h1>Gleadsy Reply Agent</h1>
-<p class="count">Auto-refresh kas 30s | TEST_MODE=true</p>
+<div class="header">
+    <h1>Gleadsy Reply Agent</h1>
+    <form method="POST" action="/logout" style="margin:0">
+        <button type="submit" class="logout-btn">Atsijungti</button>
+    </form>
+</div>
+<p class="count">Auto-refresh kas 30s | {test_mode_label}</p>
 
 <div class="stats">
-    <div class="stat-card"><div class="number">{total}</div><div class="label">Reply'ai</div></div>
+    <div class="stat-card"><div class="number">{stat_total}</div><div class="label">Viso reply'u</div></div>
+    <div class="stat-card"><div class="number">{stat_sent}</div><div class="label">Issiusta</div></div>
+    <div class="stat-card"><div class="number">{stat_sent_pct}</div><div class="label">Siuntimo %</div></div>
+    <div class="stat-card"><div class="number">{stat_avg_quality}</div><div class="label">Vid. quality</div></div>
+</div>
+
+<div class="cls-breakdown">{cls_badges_html}</div>
+
+<div class="filters">
+    <form method="GET" action="/replies" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0">
+        <label>Klientas:</label>
+        <select name="client">{client_options}</select>
+        <label>Nuo:</label>
+        <input type="date" name="from" value="{filter_date_from}">
+        <label>Iki:</label>
+        <input type="date" name="to" value="{filter_date_to}">
+        <button type="submit">Filtruoti</button>
+        <a href="/replies" class="reset" style="padding:6px 16px;background:#e0e0e0;color:#333;border-radius:6px;text-decoration:none;font-size:13px">Isvalyti</a>
+    </form>
 </div>
 
 <table>
 <tr><th>Laikas</th><th>Klientas</th><th>Lead</th><th>Kategorija</th><th>Conf.</th><th>Quality</th><th>Lead zinute</th><th>Atsakymas</th><th>Sent</th><th>Vertinimas</th></tr>
 {rows_html}
 </table>
+
+{pagination_html}
 
 <script>
 async function rate(id, rating) {{
@@ -412,6 +552,95 @@ async function rate(id, rating) {{
     }} catch(e) {{ console.error('Rating failed:', e); }}
 }}
 </script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/conversation/{lead_email}/{campaign_id}")
+async def conversation_view(lead_email: str, campaign_id: str, request: Request):
+    """Show full conversation thread for a lead + campaign."""
+    from fastapi.responses import HTMLResponse
+    import html as html_mod
+
+    if not _get_dashboard_session(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    cursor = await db.execute(
+        "SELECT id, created_at, classification, confidence, prospect_message, agent_reply, "
+        "was_sent, human_rating, quality_score, quality_summary, thread_position "
+        "FROM interactions WHERE lead_email = ? AND campaign_id = ? ORDER BY created_at ASC",
+        (lead_email, campaign_id),
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+
+    if not rows:
+        return HTMLResponse("<h2>Pokalbis nerastas</h2>", status_code=404)
+
+    cls_colors_map = {
+        "INTERESTED": "#2e7d32", "QUESTION": "#1565c0", "NOT_NOW": "#e65100",
+        "REFERRAL": "#6a1b9a", "UNSUBSCRIBE": "#c62828", "OUT_OF_OFFICE": "#757575",
+        "UNCERTAIN": "#f9a825", "API_ERROR": "#d32f2f",
+    }
+
+    messages_html = ""
+    for r in rows:
+        cls = r.get("classification", "")
+        cls_color = cls_colors_map.get(cls, "#333")
+        prospect_msg = html_mod.escape(r.get("prospect_message") or "")
+        agent_reply = html_mod.escape(r.get("agent_reply") or "")
+        quality_score = r.get("quality_score")
+        q_text = f" | Quality: {quality_score}/10" if quality_score is not None else ""
+        sent_text = "Issiusta" if r.get("was_sent") else "Neissiusta"
+        rating = r.get("human_rating") or ""
+        rating_icon = ""
+        if rating == "thumbs_up":
+            rating_icon = " &#128077;"
+        elif rating == "thumbs_down":
+            rating_icon = " &#128078;"
+
+        messages_html += f"""
+        <div class="msg lead-msg">
+            <div class="msg-header">
+                <strong>Lead</strong> — {html_mod.escape(str(r.get('created_at', '')))}
+                <span class="badge" style="color:white;background:{cls_color};margin-left:8px">{cls}</span>
+                <span style="color:#888;font-size:11px;margin-left:8px">{r.get('confidence',0):.0%}{q_text}</span>
+            </div>
+            <div class="msg-body">{prospect_msg}</div>
+        </div>"""
+        if agent_reply:
+            messages_html += f"""
+        <div class="msg agent-msg">
+            <div class="msg-header">
+                <strong>Agent</strong> — {sent_text}{rating_icon}
+            </div>
+            <div class="msg-body">{agent_reply}</div>
+        </div>"""
+
+    safe_email = html_mod.escape(lead_email)
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pokalbis — {safe_email}</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 20px; background: #f5f5f5; }}
+h2 {{ color: #333; }}
+.back {{ color: #4285f4; text-decoration: none; font-size: 14px; }}
+.back:hover {{ text-decoration: underline; }}
+.badge {{ display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }}
+.msg {{ margin: 12px 0; padding: 14px 18px; border-radius: 10px; }}
+.lead-msg {{ background: white; border-left: 4px solid #1565c0; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }}
+.agent-msg {{ background: #e8f5e9; border-left: 4px solid #2e7d32; box-shadow: 0 1px 2px rgba(0,0,0,0.08); margin-left: 40px; }}
+.msg-header {{ font-size: 12px; color: #666; margin-bottom: 6px; }}
+.msg-body {{ white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.5; }}
+.summary {{ background: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); font-size: 13px; color: #555; }}
+</style></head><body>
+<a href="/replies" class="back">&larr; Grizti i dashboard</a>
+<h2>Pokalbis su {safe_email}</h2>
+<div class="summary">
+    <strong>Kampanija:</strong> {html_mod.escape(campaign_id[:12])}... |
+    <strong>Zinuciu:</strong> {len(rows)} |
+    <strong>Paskutine:</strong> {html_mod.escape(str(rows[-1].get('created_at', '')))}
+</div>
+{messages_html}
+<br><a href="/replies" class="back">&larr; Grizti i dashboard</a>
 </body></html>"""
     return HTMLResponse(content=html)
 

@@ -30,6 +30,9 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")  # Required: secret token for webhook auth
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")  # Required: password for dashboard access
 
+# Dashboard
+DASHBOARD_BASE_URL = os.getenv("DASHBOARD_BASE_URL", "https://gleadsy-reply-agent.onrender.com")
+
 # Agent config
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.4"))
 MAX_REPLIES_PER_THREAD = int(os.getenv("MAX_REPLIES_PER_THREAD", "5"))
