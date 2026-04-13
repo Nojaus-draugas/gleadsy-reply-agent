@@ -1,6 +1,7 @@
 import json
 import re
 import logging
+import asyncio
 import anthropic
 from dataclasses import dataclass
 from prompts.classify import CLASSIFY_SYSTEM_PROMPT, build_classify_user_prompt
@@ -18,6 +19,55 @@ def get_anthropic_client():
     if _client is None:
         _client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
     return _client
+
+
+class APIUnavailableError(Exception):
+    """Raised when Claude API is unreachable after retries (credits exhausted, outage, etc.)."""
+    pass
+
+
+async def call_claude_with_retry(*, model: str, max_tokens: int, system: str | None = None,
+                                  messages: list, max_retries: int = 3) -> str:
+    """Call Claude API with exponential backoff retry. Raises APIUnavailableError on permanent failure."""
+    client = get_anthropic_client()
+
+    for attempt in range(max_retries):
+        try:
+            kwargs = {"model": model, "max_tokens": max_tokens, "messages": messages}
+            if system:
+                kwargs["system"] = system
+            response = await client.messages.create(**kwargs)
+            return response.content[0].text.strip()
+
+        except anthropic.RateLimitError as e:
+            wait = 2 ** attempt
+            logger.warning(f"Claude rate limited (attempt {attempt + 1}/{max_retries}), retrying in {wait}s")
+            if attempt == max_retries - 1:
+                raise APIUnavailableError(f"Rate limited after {max_retries} attempts: {e}") from e
+            await asyncio.sleep(wait)
+
+        except anthropic.AuthenticationError as e:
+            # Bad API key or credits exhausted — no point retrying
+            raise APIUnavailableError(f"Authentication failed (check API key/credits): {e}") from e
+
+        except anthropic.APIStatusError as e:
+            if e.status_code >= 500:
+                wait = 2 ** attempt
+                logger.warning(f"Claude server error {e.status_code} (attempt {attempt + 1}/{max_retries}), retrying in {wait}s")
+                if attempt == max_retries - 1:
+                    raise APIUnavailableError(f"Server error after {max_retries} attempts: {e}") from e
+                await asyncio.sleep(wait)
+            else:
+                raise APIUnavailableError(f"Claude API error {e.status_code}: {e}") from e
+
+        except anthropic.APIConnectionError as e:
+            wait = 2 ** attempt
+            logger.warning(f"Claude connection error (attempt {attempt + 1}/{max_retries}), retrying in {wait}s")
+            if attempt == max_retries - 1:
+                raise APIUnavailableError(f"Connection failed after {max_retries} attempts: {e}") from e
+            await asyncio.sleep(wait)
+
+    raise APIUnavailableError("Unexpected exit from retry loop")
 
 
 @dataclass
@@ -46,17 +96,15 @@ def _extract_json(raw: str) -> dict:
 
 
 async def classify_reply(reply_text: str, campaign_name: str, thread_position: int) -> ClassificationResult:
-    client = get_anthropic_client()
     user_prompt = build_classify_user_prompt(reply_text, campaign_name, thread_position)
 
     try:
-        response = await client.messages.create(
+        raw = await call_claude_with_retry(
             model="claude-sonnet-4-20250514",
             max_tokens=256,
             system=CLASSIFY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        raw = response.content[0].text.strip()
         data = _extract_json(raw)
 
         category = data.get("category", "UNCERTAIN")
@@ -69,7 +117,8 @@ async def classify_reply(reply_text: str, campaign_name: str, thread_position: i
             reasoning=data.get("reasoning", ""),
         )
     except (json.JSONDecodeError, KeyError, IndexError) as e:
-        logger.warning(f"Classification parse failed for '{reply_text[:80]}...': raw='{raw[:200]}' error={e}")
-        return ClassificationResult(category="UNCERTAIN", confidence=0.0, reasoning=f"Parse failed: {raw[:100]}")
-    except anthropic.APIError as e:
-        return ClassificationResult(category="UNCERTAIN", confidence=0.0, reasoning=f"API error: {e}")
+        logger.warning(f"Classification parse failed for '{reply_text[:80]}...': error={e}")
+        return ClassificationResult(category="UNCERTAIN", confidence=0.0, reasoning=f"Parse failed: {e}")
+    except APIUnavailableError as e:
+        logger.error(f"Claude API unavailable during classification: {e}")
+        raise  # Let webhook handler deal with this

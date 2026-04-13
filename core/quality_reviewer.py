@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from core.classifier import get_anthropic_client
+from core.classifier import call_claude_with_retry, APIUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,6 @@ async def review_quality(
     min_score: int = 7,
 ) -> QualityResult:
     """Review quality of a generated reply. Returns score and pass/fail."""
-    client = get_anthropic_client()
-
     user_prompt = f"""Įvertink šį sugeneruotą email atsakymą:
 
 **Klientas:** {client_name}
@@ -61,13 +59,12 @@ async def review_quality(
 Ar šis atsakymas tinkamas siųsti? Įvertink JSON formatu."""
 
     try:
-        response = await client.messages.create(
+        raw = await call_claude_with_retry(
             model="claude-sonnet-4-20250514",
             max_tokens=256,
             system=QUALITY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        raw = response.content[0].text.strip()
 
         # Parse JSON
         try:
@@ -91,7 +88,10 @@ Ar šis atsakymas tinkamas siųsti? Įvertink JSON formatu."""
             summary=summary,
         )
 
+    except APIUnavailableError as e:
+        logger.error(f"Quality review failed — API unavailable: {e}")
+        return QualityResult(score=0, passed=False, issues=["API unavailable — reply blocked"], summary=f"API error: {e}")
+
     except Exception as e:
-        logger.warning(f"Quality review failed: {e}")
-        # If review fails, pass by default (don't block)
-        return QualityResult(score=0, passed=True, issues=["quality review failed"], summary=str(e))
+        logger.error(f"Quality review failed: {e}")
+        return QualityResult(score=0, passed=False, issues=["quality review failed — reply blocked"], summary=f"Error: {e}")

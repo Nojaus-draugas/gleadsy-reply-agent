@@ -1,6 +1,6 @@
 import json
 import logging
-from core.classifier import classify_reply
+from core.classifier import classify_reply, APIUnavailableError
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
 from core.instantly_client import send_reply
@@ -83,7 +83,21 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
 
     # 8. Classify
     campaign_context = client_config.get("client_name", "") or payload.get("campaign_name", "")
-    classification = await classify_reply(reply_text, campaign_context, thread_position)
+    try:
+        classification = await classify_reply(reply_text, campaign_context, thread_position)
+    except APIUnavailableError as e:
+        logger.error(f"Claude API unavailable during classification for {lead_email}: {e}")
+        await notify_error("claude_api_unavailable", f"Classification failed for {lead_email}: {e}")
+        await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas — klasifikacija nepavyko", reply_text)
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": "API_ERROR",
+            "confidence": 0.0, "classification_reasoning": f"Claude API unavailable: {e}",
+            "was_sent": False, "thread_position": thread_position,
+        })
+        return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
     # 9. Below confidence threshold → UNCERTAIN
     if classification.confidence < confidence_threshold and classification.category not in ("UNSUBSCRIBE", "OUT_OF_OFFICE"):
@@ -174,10 +188,24 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
                     confirmed_slot = prev_slots[idx]
                     meeting = client_config["meeting"]
                     if config.TEST_MODE:
-                        conf_reply = await generate_meeting_confirmation(
-                            f"{confirmed_slot['day_name']} {confirmed_slot['time']}",
-                            "https://meet.google.com/test-mode-link", meeting["duration_minutes"], client_config,
-                        )
+                        try:
+                            conf_reply = await generate_meeting_confirmation(
+                                f"{confirmed_slot['day_name']} {confirmed_slot['time']}",
+                                "https://meet.google.com/test-mode-link", meeting["duration_minutes"], client_config,
+                            )
+                        except APIUnavailableError as e:
+                            logger.error(f"Claude API unavailable for meeting confirmation: {e}")
+                            await notify_error("claude_api_unavailable", f"Meeting confirmation failed for {lead_email}: {e}")
+                            await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas — susitikimo patvirtinimas nepavyko", reply_text)
+                            await log_interaction(db, {
+                                "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+                                "lead_email": lead_email, "email_account": payload.get("email_account"),
+                                "email_id": email_id, "client_id": client_id,
+                                "prospect_message": reply_text, "classification": "INTERESTED",
+                                "confidence": classification.confidence, "classification_reasoning": "Meeting confirmation generation failed",
+                                "was_sent": False, "thread_position": thread_position,
+                            })
+                            return {"status": "error", "reason": f"Claude API unavailable: {e}"}
                         log_test_reply(
                             campaign_name=payload.get("campaign_name", ""),
                             client_id=client_id,
@@ -210,10 +238,25 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
                             client_participant=meeting["participant_from_client"],
                         )
                     if event:
-                        conf_reply = await generate_meeting_confirmation(
-                            f"{confirmed_slot['day_name']} {confirmed_slot['time']}",
-                            event["meet_link"], meeting["duration_minutes"], client_config,
-                        )
+                        try:
+                            conf_reply = await generate_meeting_confirmation(
+                                f"{confirmed_slot['day_name']} {confirmed_slot['time']}",
+                                event["meet_link"], meeting["duration_minutes"], client_config,
+                            )
+                        except APIUnavailableError as e:
+                            logger.error(f"Claude API unavailable for meeting confirmation (live): {e}")
+                            await notify_error("claude_api_unavailable", f"Meeting confirmation failed for {lead_email}: {e}")
+                            await notify_escalation(lead_email, payload.get("campaign_name", ""),
+                                                   f"Susitikimas sukurtas, bet patvirtinimo email nepavyko sugeneruoti. Meet link: {event['meet_link']}", reply_text)
+                            await log_interaction(db, {
+                                "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+                                "lead_email": lead_email, "email_account": payload.get("email_account"),
+                                "email_id": email_id, "client_id": client_id,
+                                "prospect_message": reply_text, "classification": "INTERESTED",
+                                "confidence": classification.confidence, "classification_reasoning": "Meeting created but confirmation email generation failed",
+                                "was_sent": False, "thread_position": thread_position,
+                            })
+                            return {"status": "error", "reason": f"Meeting created but confirmation generation failed: {e}"}
                         await send_reply(payload.get("email_account", ""), email_id, payload.get("reply_subject", ""), conf_reply)
                         iid = await log_interaction(db, {
                             "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
@@ -292,15 +335,30 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
             return {"status": "waiting_for_human", "interaction_id": iid, "reason": "FAQ no match"}
 
     # 12. Generate reply
-    agent_reply = await generate_reply(
-        prospect_message=reply_text,
-        classification=classification.category,
-        client_config=client_config,
-        few_shots=few_shots,
-        anti_patterns=anti_patterns,
-        available_slots=available_slots,
-        matching_faq=matching_faq,
-    )
+    try:
+        agent_reply = await generate_reply(
+            prospect_message=reply_text,
+            classification=classification.category,
+            client_config=client_config,
+            few_shots=few_shots,
+            anti_patterns=anti_patterns,
+            available_slots=available_slots,
+            matching_faq=matching_faq,
+        )
+    except APIUnavailableError as e:
+        logger.error(f"Claude API unavailable during reply generation for {lead_email}: {e}")
+        await notify_error("claude_api_unavailable", f"Reply generation failed for {lead_email}: {e}")
+        await notify_escalation(lead_email, payload.get("campaign_name", ""),
+                               "Claude API nepasiekiamas — atsakymo generavimas nepavyko", reply_text)
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": classification.category,
+            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "was_sent": False, "thread_position": thread_position,
+        })
+        return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
     # 12b. Quality review
     quality = await review_quality(
