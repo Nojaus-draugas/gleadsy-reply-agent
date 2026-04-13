@@ -26,6 +26,10 @@ GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 # Slack
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
+# Security
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")  # Required: secret token for webhook auth
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")  # Required: password for dashboard access
+
 # Agent config
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.4"))
 MAX_REPLIES_PER_THREAD = int(os.getenv("MAX_REPLIES_PER_THREAD", "5"))

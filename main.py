@@ -2,13 +2,15 @@ import argparse
 import asyncio
 import json
 import logging
+import secrets
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import JSONResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
 from core.client_loader import load_clients
@@ -86,7 +88,43 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(poll_job, "interval", seconds=config.POLLING_INTERVAL_SECONDS, id="poller")
         logger.info(f"Polling mode: kas {config.POLLING_INTERVAL_SECONDS}s")
 
+    # Periodic health monitoring — check API keys, DB, notify Slack on issues
+    async def health_monitor():
+        from core.slack_notifier import notify_error
+        issues = []
+
+        # Check DB
+        try:
+            await db.execute("SELECT 1")
+        except Exception as e:
+            issues.append(f"DB error: {e}")
+
+        # Check Anthropic API key validity (lightweight — just verify key format)
+        if not config.ANTHROPIC_API_KEY:
+            issues.append("ANTHROPIC_API_KEY is empty!")
+        elif not config.ANTHROPIC_API_KEY.startswith("sk-ant-"):
+            issues.append("ANTHROPIC_API_KEY has invalid format")
+
+        if not config.INSTANTLY_API_KEY:
+            issues.append("INSTANTLY_API_KEY is empty!")
+
+        if issues:
+            await notify_error("health_check_failed", " | ".join(issues))
+            logger.error(f"Health check failed: {issues}")
+
+    scheduler.add_job(health_monitor, "interval", hours=1, id="health_monitor")
+
     scheduler.start()
+
+    # Startup warnings
+    if not config.WEBHOOK_SECRET:
+        logger.warning("⚠️  WEBHOOK_SECRET not set — webhook endpoint is UNPROTECTED!")
+    if not config.DASHBOARD_PASSWORD:
+        logger.warning("⚠️  DASHBOARD_PASSWORD not set — dashboard is UNPROTECTED!")
+    if not config.ANTHROPIC_API_KEY:
+        logger.error("❌ ANTHROPIC_API_KEY not set — system cannot function!")
+    if not config.INSTANTLY_API_KEY:
+        logger.error("❌ INSTANTLY_API_KEY not set — cannot send replies!")
 
     logger.info(f"Gleadsy Reply Agent paleistas (port 8000)")
     logger.info(f"Webhook endpoint: POST /webhook/instantly")
@@ -102,8 +140,36 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Gleadsy Reply Agent", lifespan=lifespan)
 
 
+# --- Auth helpers ---
+
+def _verify_webhook_secret(request: Request):
+    """Verify webhook request has valid secret token."""
+    if not config.WEBHOOK_SECRET:
+        logger.warning("WEBHOOK_SECRET not set — webhook endpoint is unprotected!")
+        return
+    # Check header first, then query param
+    token = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret")
+    if not token or not secrets.compare_digest(token, config.WEBHOOK_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid or missing webhook secret")
+
+
+def _get_dashboard_session(request: Request) -> bool:
+    """Check if user has valid dashboard session cookie."""
+    if not config.DASHBOARD_PASSWORD:
+        return True  # No password set — open access
+    session = request.cookies.get("gleadsy_session")
+    if not session or not secrets.compare_digest(session, _session_token):
+        return False
+    return True
+
+
+# Session token — generated on startup, lives in memory
+_session_token = secrets.token_urlsafe(32)
+
+
 @app.post("/webhook/instantly")
 async def webhook_instantly(request: Request):
+    _verify_webhook_secret(request)
     payload = await request.json()
     result = await handle_instantly_webhook(payload, db, clients, config.CONFIDENCE_THRESHOLD)
     return JSONResponse(content=result)
@@ -117,14 +183,117 @@ async def webhook_slack(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "clients": list(clients.keys()), "confidence_threshold": config.CONFIDENCE_THRESHOLD}
+    """Enhanced health check — verifies DB connectivity and API key presence."""
+    health_status = {
+        "status": "ok",
+        "clients": list(clients.keys()),
+        "confidence_threshold": config.CONFIDENCE_THRESHOLD,
+        "checks": {},
+    }
+    all_ok = True
+
+    # DB check
+    try:
+        cursor = await db.execute("SELECT COUNT(*) FROM interactions")
+        count = (await cursor.fetchone())[0]
+        health_status["checks"]["database"] = {"status": "ok", "interactions": count}
+    except Exception as e:
+        health_status["checks"]["database"] = {"status": "error", "error": str(e)}
+        all_ok = False
+
+    # API key check
+    health_status["checks"]["anthropic_api_key"] = {"status": "ok" if config.ANTHROPIC_API_KEY else "missing"}
+    if not config.ANTHROPIC_API_KEY:
+        all_ok = False
+
+    health_status["checks"]["instantly_api_key"] = {"status": "ok" if config.INSTANTLY_API_KEY else "missing"}
+    if not config.INSTANTLY_API_KEY:
+        all_ok = False
+
+    # Slack check
+    health_status["checks"]["slack_webhook"] = {"status": "ok" if config.SLACK_WEBHOOK_URL else "not_configured"}
+
+    # Security checks
+    health_status["checks"]["webhook_auth"] = {"status": "ok" if config.WEBHOOK_SECRET else "WARNING_unprotected"}
+    health_status["checks"]["dashboard_auth"] = {"status": "ok" if config.DASHBOARD_PASSWORD else "WARNING_unprotected"}
+
+    if not all_ok:
+        health_status["status"] = "degraded"
+
+    return health_status
+
+
+@app.get("/login")
+async def login_page(request: Request):
+    """Show login form for dashboard access."""
+    from fastapi.responses import HTMLResponse
+    if not config.DASHBOARD_PASSWORD or _get_dashboard_session(request):
+        return HTMLResponse(status_code=302, headers={"Location": "/replies"})
+    html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Gleadsy - Login</title>
+<style>
+body { font-family: -apple-system, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+.card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 320px; text-align: center; }
+h2 { color: #333; margin-bottom: 24px; }
+input[type=password] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; }
+button { width: 100%; padding: 12px; background: #4285f4; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; }
+button:hover { background: #3367d6; }
+.error { color: #c62828; font-size: 13px; margin-top: 8px; display: none; }
+</style></head><body>
+<div class="card">
+    <h2>Gleadsy Reply Agent</h2>
+    <form method="POST" action="/login">
+        <input type="password" name="password" placeholder="Slaptazodis" autofocus required>
+        <button type="submit">Prisijungti</button>
+    </form>
+</div>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    """Process login form."""
+    from fastapi.responses import HTMLResponse
+    form = await request.form()
+    password = form.get("password", "")
+    if config.DASHBOARD_PASSWORD and secrets.compare_digest(password, config.DASHBOARD_PASSWORD):
+        response = HTMLResponse(status_code=302, headers={"Location": "/replies"})
+        response.set_cookie("gleadsy_session", _session_token, httponly=True, samesite="lax", max_age=86400 * 7)
+        return response
+    # Wrong password — show login with error
+    html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Gleadsy - Login</title>
+<style>
+body { font-family: -apple-system, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+.card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 320px; text-align: center; }
+h2 { color: #333; margin-bottom: 24px; }
+input[type=password] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; }
+button { width: 100%; padding: 12px; background: #4285f4; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; }
+button:hover { background: #3367d6; }
+.error { color: #c62828; font-size: 13px; margin-top: 8px; }
+</style></head><body>
+<div class="card">
+    <h2>Gleadsy Reply Agent</h2>
+    <form method="POST" action="/login">
+        <input type="password" name="password" placeholder="Slaptazodis" autofocus required>
+        <button type="submit">Prisijungti</button>
+        <p class="error">Neteisingas slaptazodis</p>
+    </form>
+</div>
+</body></html>"""
+    return HTMLResponse(content=html, status_code=401)
 
 
 @app.get("/replies")
-async def replies_dashboard():
+async def replies_dashboard(request: Request):
     """Web dashboard showing all replies from DB with rating buttons and quality scores."""
     from fastapi.responses import HTMLResponse
     import html as html_mod
+
+    # Auth check
+    if not _get_dashboard_session(request):
+        return HTMLResponse(status_code=302, headers={"Location": "/login"})
 
     cursor = await db.execute(
         "SELECT id, created_at, client_id, lead_email, classification, confidence, "
@@ -248,9 +417,11 @@ async function rate(id, rating) {{
 
 
 @app.get("/answer/{interaction_id}")
-async def answer_form(interaction_id: int):
+async def answer_form(interaction_id: int, request: Request):
     """Show form to answer an unknown question."""
     from fastapi.responses import HTMLResponse
+    if not _get_dashboard_session(request):
+        return HTMLResponse(status_code=302, headers={"Location": "/login"})
     cursor = await db.execute(
         "SELECT lead_email, client_id, prospect_message, classification FROM interactions WHERE id = ?",
         (interaction_id,)
@@ -297,6 +468,9 @@ async def answer_submit(interaction_id: int, request: Request):
     """Process human answer: save to FAQ YAML."""
     from fastapi.responses import HTMLResponse
     import yaml
+
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     form = await request.form()
     answer_text = form.get("answer", "").strip()
@@ -370,6 +544,8 @@ h2 {{ color: #2e7d32; }}
 
 @app.post("/api/rate/{interaction_id}")
 async def rate_interaction(interaction_id: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     body = await request.json()
     rating = body.get("rating")
     if rating not in ("thumbs_up", "thumbs_down"):
@@ -379,7 +555,9 @@ async def rate_interaction(interaction_id: int, request: Request):
 
 
 @app.post("/api/human-takeover/{lead_email}/{campaign_id}")
-async def human_takeover(lead_email: str, campaign_id: str):
+async def human_takeover(lead_email: str, campaign_id: str, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     await set_human_takeover(db, lead_email, campaign_id)
     return {"status": "ok", "lead_email": lead_email, "campaign_id": campaign_id}
 
