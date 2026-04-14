@@ -2,10 +2,11 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import secrets
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -75,9 +76,10 @@ async def lifespan(app: FastAPI):
             last_poll = {"timestamp": last_row[0]}
             logger.info(f"Resuming from last processed: {last_row[0]}")
         else:
-            # Fresh DB — start from NOW (don't reprocess old replies)
-            last_poll = {"timestamp": datetime.utcnow().isoformat()}
-            logger.info("Fresh start — polling only new replies from now")
+            # Fresh DB — one-time backfill from last N days
+            backfill_days = int(os.getenv("BACKFILL_DAYS", "30"))
+            last_poll = {"timestamp": (datetime.utcnow() - timedelta(days=backfill_days)).isoformat()}
+            logger.info(f"Fresh start — backfilling last {backfill_days} days from Instantly API")
 
         async def poll_job():
             replies = await poll_for_replies(last_poll["timestamp"])

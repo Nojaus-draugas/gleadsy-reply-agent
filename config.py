@@ -7,7 +7,7 @@ load_dotenv(override=True)
 # Paths
 BASE_DIR = Path(__file__).parent
 CLIENTS_DIR = BASE_DIR / "clients"
-DB_PATH = BASE_DIR / "data" / "agent.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "data" / "agent.db")))
 
 # Instantly
 INSTANTLY_API_KEY = os.getenv("INSTANTLY_API_KEY", "")
