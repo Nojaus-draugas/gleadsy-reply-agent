@@ -334,7 +334,8 @@ async def replies_dashboard(request: Request):
     # Fetch rows
     cursor = await db.execute(
         f"SELECT id, created_at, client_id, lead_email, campaign_id, classification, confidence, "
-        f"prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary "
+        f"prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary, "
+        f"outcome "
         f"FROM interactions{where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
         params + [per_page, offset],
     )
@@ -352,6 +353,13 @@ async def replies_dashboard(request: Request):
     stat_sent = stats_row["sent"] or 0
     stat_sent_pct = f"{stat_sent / stat_total * 100:.0f}%" if stat_total > 0 else "0%"
     stat_avg_quality = f"{stats_row['avg_quality']:.1f}" if stats_row["avg_quality"] else "-"
+
+    # Awaiting prospect reply: distinct leads where we sent a reply and no subsequent prospect reply
+    awaiting_where = where_sql + (" AND " if where_sql else " WHERE ") + "was_sent = 1 AND outcome IS NULL"
+    cursor = await db.execute(
+        f"SELECT COUNT(DISTINCT lead_email) FROM interactions{awaiting_where}", params,
+    )
+    stat_awaiting = (await cursor.fetchone())[0] or 0
 
     cursor = await db.execute(
         f"SELECT classification, COUNT(*) as cnt FROM interactions{where_sql} GROUP BY classification",
@@ -371,9 +379,10 @@ async def replies_dashboard(request: Request):
         for c, n in sorted(cls_counts.items(), key=lambda x: -x[1])
     )
 
-    # Available clients for filter dropdown
+    # Available clients for filter dropdown — merge DB clients with loaded YAML configs
     cursor = await db.execute("SELECT DISTINCT client_id FROM interactions ORDER BY client_id")
-    available_clients = [row["client_id"] for row in await cursor.fetchall()]
+    db_clients = [row["client_id"] for row in await cursor.fetchall()]
+    available_clients = sorted(set(db_clients) | set(clients.keys()))
 
     # --- Build table rows ---
     rows_html = ""
@@ -414,6 +423,17 @@ async def replies_dashboard(request: Request):
 
         sent_icon = "&#9989;" if r.get("was_sent") else "&#128221;"
 
+        # Awaiting-reply status badge
+        outcome = r.get("outcome")
+        if r.get("was_sent") and not outcome:
+            status_badge = '<span class="badge" style="color:#e65100;background:#fff3e0" title="Laukiam leado atsakymo">&#9203; Laukiam</span>'
+        elif outcome == "replied_again":
+            status_badge = '<span class="badge" style="color:#2e7d32;background:#e8f5e9" title="Leadas atsake">&#128172; Atsake</span>'
+        elif outcome == "unsubscribed":
+            status_badge = '<span class="badge" style="color:#c62828;background:#ffebee">Unsub</span>'
+        else:
+            status_badge = '<span class="badge" style="color:#999;background:#f5f5f5">-</span>'
+
         # Lead email links to conversation view
         lead_link = f'<a href="/conversation/{lead_email}/{campaign_id}" style="color:#1565c0;text-decoration:none" title="Rodyti visa pokalbio gija">{lead_email}</a>'
 
@@ -427,6 +447,7 @@ async def replies_dashboard(request: Request):
             <td class="msg-col">{orig}</td>
             <td class="msg-col">{reply}</td>
             <td style="text-align:center">{sent_icon}</td>
+            <td style="text-align:center">{status_badge}</td>
             <td style="text-align:center;white-space:nowrap">{rating_html}</td>
         </tr>"""
 
@@ -510,6 +531,7 @@ tr:hover {{ background: #f0f7ff; }}
     <div class="stat-card"><div class="number">{stat_sent}</div><div class="label">Issiusta</div></div>
     <div class="stat-card"><div class="number">{stat_sent_pct}</div><div class="label">Siuntimo %</div></div>
     <div class="stat-card"><div class="number">{stat_avg_quality}</div><div class="label">Vid. quality</div></div>
+    <div class="stat-card" style="border-left:4px solid #f9a825"><div class="number" style="color:#e65100">{stat_awaiting}</div><div class="label">Laukiam atsakymo</div></div>
 </div>
 
 <div class="cls-breakdown">{cls_badges_html}</div>
@@ -528,7 +550,7 @@ tr:hover {{ background: #f0f7ff; }}
 </div>
 
 <table>
-<tr><th>Laikas</th><th>Klientas</th><th>Lead</th><th>Kategorija</th><th>Conf.</th><th>Quality</th><th>Lead zinute</th><th>Atsakymas</th><th>Sent</th><th>Vertinimas</th></tr>
+<tr><th>Laikas</th><th>Klientas</th><th>Lead</th><th>Kategorija</th><th>Conf.</th><th>Quality</th><th>Lead zinute</th><th>Atsakymas</th><th>Sent</th><th>Statusas</th><th>Vertinimas</th></tr>
 {rows_html}
 </table>
 
