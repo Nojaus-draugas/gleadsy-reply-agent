@@ -1,13 +1,37 @@
+import hashlib
+import time
 import httpx
 import logging
 import config
 
 logger = logging.getLogger(__name__)
 
+# In-memory dedup: suppress identical Slack messages sent within the last 24h.
+# Second safety net in case webhook-level is_duplicate fails (e.g. after DB wipe
+# on Render restart). Keyed by sha1(text); stores first-sent epoch.
+_RECENT: dict[str, float] = {}
+_DEDUP_TTL = 24 * 3600
+
+
+def _dedup_hit(text: str) -> bool:
+    now = time.time()
+    # purge expired
+    for k, ts in list(_RECENT.items()):
+        if now - ts > _DEDUP_TTL:
+            del _RECENT[k]
+    key = hashlib.sha1(text.encode("utf-8", "ignore")).hexdigest()
+    if key in _RECENT:
+        return True
+    _RECENT[key] = now
+    return False
+
 
 async def _send(text: str):
     if not config.SLACK_WEBHOOK_URL:
         logger.debug(f"Slack (no webhook configured): {text[:100]}")
+        return
+    if _dedup_hit(text):
+        logger.info(f"Slack dedup: suppressing repeat within 24h: {text[:80]}")
         return
     try:
         async with httpx.AsyncClient(timeout=10) as client:
