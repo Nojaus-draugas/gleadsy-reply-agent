@@ -12,8 +12,6 @@ DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "data" / "agent.db")))
 # Instantly
 INSTANTLY_API_KEY = os.getenv("INSTANTLY_API_KEY", "")
 INSTANTLY_WORKSPACE_ID = os.getenv("INSTANTLY_WORKSPACE_ID", "")
-REPLY_SOURCE = os.getenv("REPLY_SOURCE", "webhook")  # "webhook" or "polling"
-POLLING_INTERVAL_SECONDS = int(os.getenv("POLLING_INTERVAL_SECONDS", "60"))
 
 # Claude API
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

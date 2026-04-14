@@ -32,6 +32,7 @@ logger = logging.getLogger("gleadsy-reply-agent")
 db = None
 clients = {}
 scheduler = None
+_webhook_state: dict = {}  # tracks last webhook receive time + alert flag
 
 
 @asynccontextmanager
@@ -63,28 +64,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_weekly_digest, "cron", day_of_week="mon", hour=9, args=[db], id="weekly_digest")
     scheduler.add_job(run_confidence_calibrator, "cron", day_of_week="sun", hour=23, args=[db], id="confidence_calibrator")
 
-    # Polling mode
-    if config.REPLY_SOURCE == "polling":
-        from core.instantly_client import poll_for_replies
-        from datetime import timedelta
-
-        # Watermark: only process replies newer than service start time.
-        # Rationale: on Render free-tier the container restarts and DB is ephemeral.
-        # Restoring from Sheets only recovers backed-up rows (not all historical). If we
-        # backfilled via Instantly API we'd re-classify + re-reply + re-Slack the same
-        # emails on every restart. Safer to only forward-process: older replies that
-        # weren't captured are accepted as loss (already handled in real-time before restart).
-        last_poll = {"timestamp": datetime.utcnow().isoformat()}
-        logger.info(f"Polling watermark set to service start: {last_poll['timestamp']}")
-
-        async def poll_job():
-            replies = await poll_for_replies(last_poll["timestamp"])
-            last_poll["timestamp"] = datetime.utcnow().isoformat()
-            for reply in replies:
-                await handle_instantly_webhook(reply, db, clients, config.CONFIDENCE_THRESHOLD)
-
-        scheduler.add_job(poll_job, "interval", seconds=config.POLLING_INTERVAL_SECONDS, id="poller")
-        logger.info(f"Polling mode: kas {config.POLLING_INTERVAL_SECONDS}s")
+    # Webhook-only mode. No polling — if Instantly webhook stops delivering,
+    # webhook_silence_monitor below will page Slack.
 
     # Periodic health monitoring — check API keys, DB, notify Slack on issues
     async def health_monitor():
@@ -111,6 +92,34 @@ async def lifespan(app: FastAPI):
             logger.error(f"Health check failed: {issues}")
 
     scheduler.add_job(health_monitor, "interval", hours=1, id="health_monitor")
+
+    # Webhook silence monitor — alerts if no Instantly webhook received during business hours.
+    # Checks last received webhook timestamp (tracked on /webhook/instantly POST).
+    # Fires once per silence streak; reset when a webhook arrives.
+    async def webhook_silence_monitor():
+        from core.slack_notifier import notify_error
+        from datetime import datetime as _dt
+        # Only alert during business hours Europe/Vilnius (~UTC+2/3)
+        hour = (_dt.utcnow().hour + 3) % 24
+        if hour < 9 or hour >= 18:
+            return
+        last_ts = _webhook_state.get("last_received_at")
+        now = datetime.utcnow()
+        # If service just started, give webhooks 2h to arrive before alerting
+        reference = last_ts or _webhook_state.get("service_started_at") or now
+        silence_h = (now - reference).total_seconds() / 3600
+        threshold_h = float(os.getenv("WEBHOOK_SILENCE_ALERT_HOURS", "6"))
+        if silence_h >= threshold_h and not _webhook_state.get("alerted_silence"):
+            await notify_error(
+                "webhook_silence",
+                f"Instantly webhook nepasiekia serverio jau {silence_h:.1f}h. "
+                f"Patikrink Instantly → Integrations → Webhooks.",
+            )
+            _webhook_state["alerted_silence"] = True
+            logger.error(f"Webhook silence {silence_h:.1f}h — Slack alerted")
+
+    _webhook_state["service_started_at"] = datetime.utcnow()
+    scheduler.add_job(webhook_silence_monitor, "interval", minutes=30, id="webhook_silence_monitor")
 
     scheduler.start()
 
@@ -169,6 +178,8 @@ _session_token = secrets.token_urlsafe(32)
 async def webhook_instantly(request: Request):
     _verify_webhook_secret(request)
     payload = await request.json()
+    _webhook_state["last_received_at"] = datetime.utcnow()
+    _webhook_state["alerted_silence"] = False  # reset silence alert
     result = await handle_instantly_webhook(payload, db, clients, config.CONFIDENCE_THRESHOLD)
     return JSONResponse(content=result)
 
