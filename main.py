@@ -68,18 +68,14 @@ async def lifespan(app: FastAPI):
         from core.instantly_client import poll_for_replies
         from datetime import timedelta
 
-        # Check DB for last processed timestamp — avoid reprocessing old replies
-        cursor = await db.execute("SELECT MAX(created_at) FROM interactions")
-        last_row = await cursor.fetchone()
-        if last_row and last_row[0]:
-            # DB has data — start from last processed time
-            last_poll = {"timestamp": last_row[0]}
-            logger.info(f"Resuming from last processed: {last_row[0]}")
-        else:
-            # Fresh DB — one-time backfill from last N days
-            backfill_days = int(os.getenv("BACKFILL_DAYS", "30"))
-            last_poll = {"timestamp": (datetime.utcnow() - timedelta(days=backfill_days)).isoformat()}
-            logger.info(f"Fresh start — backfilling last {backfill_days} days from Instantly API")
+        # Watermark: only process replies newer than service start time.
+        # Rationale: on Render free-tier the container restarts and DB is ephemeral.
+        # Restoring from Sheets only recovers backed-up rows (not all historical). If we
+        # backfilled via Instantly API we'd re-classify + re-reply + re-Slack the same
+        # emails on every restart. Safer to only forward-process: older replies that
+        # weren't captured are accepted as loss (already handled in real-time before restart).
+        last_poll = {"timestamp": datetime.utcnow().isoformat()}
+        logger.info(f"Polling watermark set to service start: {last_poll['timestamp']}")
 
         async def poll_job():
             replies = await poll_for_replies(last_poll["timestamp"])
