@@ -91,13 +91,71 @@ async def _run_migrations(conn: aiosqlite.Connection):
 
 
 async def init_db(db_path: Path) -> aiosqlite.Connection:
+    is_fresh = not db_path.exists()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(str(db_path))
     conn.row_factory = aiosqlite.Row
     await conn.executescript(SCHEMA)
     await _run_migrations(conn)
     await conn.commit()
+    if is_fresh:
+        await _restore_from_backup(conn)
     return conn
+
+
+async def _restore_from_backup(conn: aiosqlite.Connection) -> None:
+    """On fresh DB (e.g. after Render redeploy), pull prior interactions from Sheets."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from core import sheets_backup
+        rows = sheets_backup.fetch_all_rows()
+        if not rows:
+            return
+        log.info("Restoring %d interactions from Google Sheets backup", len(rows))
+        restored = 0
+        for r in rows:
+            try:
+                def _v(k):
+                    v = r.get(k, "")
+                    return v if v != "" else None
+                def _f(k):
+                    v = _v(k)
+                    try: return float(v) if v is not None else None
+                    except: return None
+                def _i(k):
+                    v = _v(k)
+                    try: return int(v) if v is not None else None
+                    except: return None
+                def _b(k):
+                    v = str(r.get(k, "")).lower()
+                    return v in ("1", "true", "yes")
+                await conn.execute(
+                    """INSERT OR IGNORE INTO interactions
+                    (id, campaign_id, campaign_name, lead_email, email_account, email_id,
+                     client_id, prospect_message, classification, confidence,
+                     classification_reasoning, agent_reply, was_sent, matched_faq_index,
+                     faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
+                     quality_score, quality_issues, quality_summary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        _i("id"), _v("campaign_id"), _v("campaign_name"), _v("lead_email"),
+                        _v("email_account"), _v("email_id"), _v("client_id"),
+                        _v("prospect_message"), _v("classification"), _f("confidence"),
+                        _v("classification_reasoning"), _v("agent_reply"),
+                        _b("was_sent"), _i("matched_faq_index"), _f("faq_confidence"),
+                        _v("offered_slots"), _v("few_shots_used"),
+                        _i("thread_position") or 1, _v("brief_version"),
+                        _f("quality_score"), _v("quality_issues"), _v("quality_summary"),
+                    ),
+                )
+                restored += 1
+            except Exception as e:
+                log.warning("restore row failed: %s", e)
+        await conn.commit()
+        log.info("Restored %d/%d interactions from backup", restored, len(rows))
+    except Exception as e:
+        log.error("restore_from_backup failed: %s", e)
 
 
 async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
@@ -123,7 +181,18 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
         ),
     )
     await conn.commit()
-    return cursor.lastrowid
+    row_id = cursor.lastrowid
+    # Backup to Google Sheets (silent if not configured)
+    try:
+        from core import sheets_backup
+        from datetime import datetime, timezone
+        backup_row = dict(data)
+        backup_row["id"] = row_id
+        backup_row["created_at"] = datetime.now(timezone.utc).isoformat()
+        sheets_backup.append_interaction(backup_row)
+    except Exception:
+        pass
+    return row_id
 
 
 async def is_duplicate(conn: aiosqlite.Connection, email_id: str) -> bool:

@@ -1,5 +1,6 @@
 .env
 data/
+secrets/
 credentials.json
 token.json
 __pycache__/

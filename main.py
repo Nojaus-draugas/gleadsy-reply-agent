@@ -815,6 +815,27 @@ async def human_takeover(lead_email: str, campaign_id: str, request: Request):
     return {"status": "ok", "lead_email": lead_email, "campaign_id": campaign_id}
 
 
+@app.post("/admin/backfill-sheets")
+async def admin_backfill_sheets(request: Request):
+    """One-shot: push all existing interactions in DB into the Sheets backup."""
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from core import sheets_backup
+    cursor = await db.execute("SELECT * FROM interactions ORDER BY id")
+    rows = await cursor.fetchall()
+    existing_ids = {r.get("id") for r in sheets_backup.fetch_all_rows() if r.get("id")}
+    pushed = 0
+    skipped = 0
+    for r in rows:
+        d = dict(r)
+        if str(d.get("id")) in existing_ids:
+            skipped += 1
+            continue
+        sheets_backup.append_interaction(d)
+        pushed += 1
+    return {"pushed": pushed, "skipped": skipped, "total_in_db": len(rows)}
+
+
 @app.get("/api/stats")
 async def stats():
     from datetime import timedelta
