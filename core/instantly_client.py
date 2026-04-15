@@ -13,7 +13,15 @@ def _headers():
 
 
 async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_text: str) -> dict:
-    """Send reply via Instantly API V2. Raises on failure after 3 retries."""
+    """Send reply via Instantly API V2.
+
+    Retry policy is conservative to avoid double-sends:
+    - 429 (rate limit): retry with exponential backoff (safe — request not accepted)
+    - Network errors (httpx.RequestError): retry (request likely never reached server)
+    - 5xx server errors: do NOT retry — server may have processed the send before
+      failing the response, retrying would duplicate the email to the prospect
+    - 4xx other than 429: do NOT retry — client error, retrying won't help
+    """
     payload = {
         "eaccount": email_account,
         "reply_to_uuid": reply_to_uuid,
@@ -28,23 +36,30 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
                     json=payload,
                     headers=_headers(),
                 )
-                if response.status_code == 429:
-                    if attempt == 2:
-                        raise httpx.HTTPStatusError(
-                            "Rate limited after 3 attempts",
-                            request=response.request, response=response,
-                        )
-                    wait = 2 ** attempt
-                    logger.warning(f"Instantly rate limited, retrying in {wait}s")
-                    await asyncio.sleep(wait)
-                    continue
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError:
+            except httpx.RequestError as e:
+                # Connection / timeout — request likely didn't reach server, safe to retry
                 if attempt == 2:
                     raise
-                logger.warning(f"Instantly API error (attempt {attempt+1})")
-                await asyncio.sleep(2 ** attempt)
+                wait = 2 ** attempt
+                logger.warning(f"Instantly network error {e!r}, retrying in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+
+            if response.status_code == 429:
+                if attempt == 2:
+                    raise httpx.HTTPStatusError(
+                        "Rate limited after 3 attempts",
+                        request=response.request, response=response,
+                    )
+                wait = 2 ** attempt
+                logger.warning(f"Instantly rate limited, retrying in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+
+            # Any other status (2xx success, 4xx, 5xx) — return or raise immediately.
+            # 5xx is intentionally NOT retried: the send may have succeeded server-side.
+            response.raise_for_status()
+            return response.json()
     raise RuntimeError("send_reply: unexpected exit from retry loop")
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from core.classifier import classify_reply, APIUnavailableError
@@ -21,6 +22,13 @@ from core.email_notifier import notify_escalation_email, notify_interested_email
 
 logger = logging.getLogger(__name__)
 
+# In-flight processing guard. If Instantly resends a webhook while we're still
+# processing the first one (classify + send_reply takes 5-10s and Instantly may
+# retry on slow responses), the in-DB dedup check would still pass because the
+# row isn't logged until the end. This in-memory set blocks concurrent
+# duplicates within the same process.
+_in_flight: set[str] = set()
+
 
 async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_threshold: float) -> dict:
     # 1. Validate event type
@@ -31,9 +39,26 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
     lead_email = payload.get("lead_email", "")
     campaign_id = payload.get("campaign_id", "")
 
-    # 2. Deduplicate
+    # 2a. In-flight guard — block concurrent webhook retries for same email
+    if email_id and email_id in _in_flight:
+        logger.warning(f"Webhook duplicate (in-flight) for email_id={email_id}; ignoring")
+        return {"status": "ignored", "reason": "in_flight"}
+
+    # 2b. DB-level dedup (catches retries that arrive after we finished)
     if await is_duplicate(db, email_id):
         return {"status": "ignored", "reason": "duplicate"}
+
+    if email_id:
+        _in_flight.add(email_id)
+    try:
+        return await _process_reply(payload, db, clients, confidence_threshold,
+                                     email_id, lead_email, campaign_id)
+    finally:
+        _in_flight.discard(email_id)
+
+
+async def _process_reply(payload: dict, db, clients: dict, confidence_threshold: float,
+                          email_id: str, lead_email: str, campaign_id: str) -> dict:
 
     # 3. Find client config
     client_config = get_client_by_campaign(clients, campaign_id)
