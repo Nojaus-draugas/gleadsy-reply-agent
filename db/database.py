@@ -136,8 +136,8 @@ async def _restore_from_backup(conn: aiosqlite.Connection) -> None:
                      client_id, prospect_message, classification, confidence,
                      classification_reasoning, agent_reply, was_sent, matched_faq_index,
                      faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
-                     quality_score, quality_issues, quality_summary)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     quality_score, quality_issues, quality_summary, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         _i("id"), _v("campaign_id"), _v("campaign_name"), _v("lead_email"),
                         _v("email_account"), _v("email_id"), _v("client_id"),
@@ -147,6 +147,7 @@ async def _restore_from_backup(conn: aiosqlite.Connection) -> None:
                         _v("offered_slots"), _v("few_shots_used"),
                         _i("thread_position") or 1, _v("brief_version"),
                         _f("quality_score"), _v("quality_issues"), _v("quality_summary"),
+                        _v("created_at"),
                     ),
                 )
                 restored += 1
