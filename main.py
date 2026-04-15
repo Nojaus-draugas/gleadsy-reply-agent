@@ -176,12 +176,38 @@ _session_token = secrets.token_urlsafe(32)
 
 @app.post("/webhook/instantly")
 async def webhook_instantly(request: Request):
+    """Fire-and-forget: acknowledge webhook in <100ms, process in background.
+
+    Instantly has a ~30s webhook timeout. Our full pipeline (classify + generate
+    reply + quality review + send + log) can take 10-35s, causing Instantly to
+    mark the webhook as failed and drop the event (no retries). By returning 200
+    immediately and processing asynchronously, we guarantee Instantly never
+    times out and no prospect replies are lost.
+
+    Risk: if the background task crashes, Instantly won't know. Mitigated via
+    exception handler that notifies Slack so we can investigate manually.
+    """
     _verify_webhook_secret(request)
     payload = await request.json()
     _webhook_state["last_received_at"] = datetime.utcnow()
     _webhook_state["alerted_silence"] = False  # reset silence alert
-    result = await handle_instantly_webhook(payload, db, clients, config.CONFIDENCE_THRESHOLD)
-    return JSONResponse(content=result)
+
+    async def _bg_process():
+        try:
+            await handle_instantly_webhook(payload, db, clients, config.CONFIDENCE_THRESHOLD)
+        except Exception as e:
+            logger.exception("Background webhook processing failed")
+            try:
+                from core.slack_notifier import notify_error
+                await notify_error(
+                    "webhook_processing_failed",
+                    f"{type(e).__name__}: {e} | lead={payload.get('lead_email','?')} email_id={payload.get('email_id','?')}",
+                )
+            except Exception:
+                logger.exception("Failed to notify Slack about background failure")
+
+    asyncio.create_task(_bg_process())
+    return JSONResponse(content={"status": "accepted"})
 
 
 @app.post("/webhook/slack")
