@@ -198,6 +198,10 @@ async def poll_sent_emails(since_timestamp: str) -> list[dict]:
                     "subject": email.get("subject", ""),
                     "body_text": body_text,
                     "timestamp": email.get("timestamp_created", ""),
+                    # Instantly sequence step: "0_1_0" = cold sequence step (not a personal reply).
+                    # Empty/null = manual reply by Paulius.
+                    "step": email.get("step") or "",
+                    "ue_type": email.get("ue_type"),
                 })
 
             starting_after = data.get("next_starting_after")

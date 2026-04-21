@@ -118,6 +118,14 @@ async def run_auto_learn(conn: aiosqlite.Connection, clients: dict) -> dict:
                 stats["skipped"] += 1
                 continue
 
+            # KRITIŠKAI: jei yra sequence step - tai šablono follow-up, NE personalizuotas Pauliaus reply.
+            # Instantly step'ai: "0_0_0" = cold open, "0_1_0" = follow-up #1, etc.
+            # Pauliaus rankomis rašytas reply NETURI step'o (null/empty).
+            step = sent.get("step") or ""
+            if step and step.strip():
+                stats["skipped"] += 1
+                continue
+
             # Filter: labai trumpi atsakymai (< 20 char) - dažniausiai "Sveiki," ar confirmation
             if len(body_text.strip()) < 20:
                 stats["skipped"] += 1
