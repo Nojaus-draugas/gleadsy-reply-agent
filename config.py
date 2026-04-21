@@ -16,6 +16,24 @@ INSTANTLY_WORKSPACE_ID = os.getenv("INSTANTLY_WORKSPACE_ID", "")
 # Claude API
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Models - centralizuoti, lengvai keičiami per ENV
+# Haiku 4.5 - pigus ir greitas klasifikacijai / FAQ match / time parse
+# Sonnet 4.6 - reply generation ir quality review (svarbiau kokybė)
+CLASSIFY_MODEL = os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5-20251001")
+REPLY_MODEL = os.getenv("REPLY_MODEL", "claude-sonnet-4-6")
+QUALITY_MODEL = os.getenv("QUALITY_MODEL", "claude-sonnet-4-6")
+FAQ_MATCH_MODEL = os.getenv("FAQ_MATCH_MODEL", "claude-haiku-4-5-20251001")
+TIME_PARSE_MODEL = os.getenv("TIME_PARSE_MODEL", "claude-haiku-4-5-20251001")
+MEETING_CONFIRM_MODEL = os.getenv("MEETING_CONFIRM_MODEL", "claude-haiku-4-5-20251001")
+
+# Cost per 1M tokens ($) - naudojama cost tracking'ui log'uose
+# Šaltinis: anthropic.com/pricing (2026-04)
+MODEL_PRICING = {
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25},
+    "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
+    "claude-opus-4-7":           {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
+}
+
 # Google Calendar
 GOOGLE_CALENDAR_CREDENTIALS_PATH = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "./credentials.json")
 GOOGLE_CALENDAR_TOKEN_PATH = os.getenv("GOOGLE_CALENDAR_TOKEN_PATH", "./token.json")
@@ -41,5 +59,5 @@ TIMEZONE = os.getenv("TIMEZONE", "Europe/Vilnius")
 NOTIFY_EMAIL = os.getenv("NOTIFY_EMAIL", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
-# Test mode — logs replies to Google Sheets instead of sending via Instantly
+# Test mode - logs replies to Google Sheets instead of sending via Instantly
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"

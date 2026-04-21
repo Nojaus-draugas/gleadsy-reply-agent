@@ -33,7 +33,7 @@ def send_email_notification(subject: str, body_html: str):
 def notify_escalation_email(lead_email: str, client_id: str, classification: str,
                             confidence: float, original_message: str, reasoning: str):
     """Send escalation email for UNCERTAIN or important replies."""
-    subject = f"⚠️ Gleadsy: reikia peržiūros — {lead_email}"
+    subject = f"⚠️ Gleadsy: reikia peržiūros - {lead_email}"
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #e65100;">⚠️ Reply reikia tavo peržiūros</h2>
@@ -59,7 +59,7 @@ def notify_escalation_email(lead_email: str, client_id: str, classification: str
 
 def notify_interested_email(lead_email: str, client_id: str, original_message: str, generated_reply: str):
     """Notify about INTERESTED lead with draft reply."""
-    subject = f"🔥 Gleadsy: INTERESTED lead — {lead_email}"
+    subject = f"🔥 Gleadsy: INTERESTED lead - {lead_email}"
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2e7d32;">🔥 Naujas suinteresuotas lead!</h2>
@@ -83,7 +83,7 @@ def notify_interested_email(lead_email: str, client_id: str, original_message: s
 
 def notify_unknown_question_email(lead_email: str, client_id: str, question: str, interaction_id: int):
     """Notify about question that FAQ can't answer. Ask human for answer."""
-    subject = f"❓ Gleadsy: nežinomas klausimas — {lead_email}"
+    subject = f"❓ Gleadsy: nežinomas klausimas - {lead_email}"
     answer_url = f"{config.DASHBOARD_BASE_URL}/answer/{interaction_id}"
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">

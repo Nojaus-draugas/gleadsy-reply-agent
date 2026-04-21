@@ -78,6 +78,13 @@ MIGRATIONS = [
     "ALTER TABLE interactions ADD COLUMN quality_score INTEGER",
     "ALTER TABLE interactions ADD COLUMN quality_issues TEXT",
     "ALTER TABLE interactions ADD COLUMN quality_summary TEXT",
+    # Cost tracking - pridedama 2026-04
+    "ALTER TABLE interactions ADD COLUMN tokens_in INTEGER",
+    "ALTER TABLE interactions ADD COLUMN tokens_out INTEGER",
+    "ALTER TABLE interactions ADD COLUMN tokens_cache_read INTEGER",
+    "ALTER TABLE interactions ADD COLUMN cost_usd REAL",
+    # 2026-04-21 - pasiulymas ka patobulinti (is quality reviewer'io)
+    "ALTER TABLE interactions ADD COLUMN improvement_suggestion TEXT",
 ]
 
 
@@ -160,14 +167,23 @@ async def _restore_from_backup(conn: aiosqlite.Connection) -> None:
 
 
 async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
+    # Auto-pull per-request Claude usage jei call site nenurodo
+    if "cost_usd" not in data:
+        try:
+            from core.classifier import get_usage_snapshot
+            snap = get_usage_snapshot()
+            data = {**data, **snap}
+        except Exception:
+            pass
     cursor = await conn.execute(
         """INSERT INTO interactions
         (campaign_id, campaign_name, lead_email, email_account, email_id,
          client_id, prospect_message, classification, confidence,
          classification_reasoning, agent_reply, was_sent, matched_faq_index,
          faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
-         quality_score, quality_issues, quality_summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         quality_score, quality_issues, quality_summary, improvement_suggestion,
+         tokens_in, tokens_out, tokens_cache_read, cost_usd)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["campaign_id"], data.get("campaign_name"), data["lead_email"],
             data.get("email_account"), data["email_id"], data["client_id"],
@@ -178,7 +194,9 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
             data.get("few_shots_used"), data.get("thread_position", 1),
             data.get("brief_version"),
             data.get("quality_score"), data.get("quality_issues"),
-            data.get("quality_summary"),
+            data.get("quality_summary"), data.get("improvement_suggestion"),
+            data.get("tokens_in"), data.get("tokens_out"),
+            data.get("tokens_cache_read"), data.get("cost_usd"),
         ),
     )
     await conn.commit()

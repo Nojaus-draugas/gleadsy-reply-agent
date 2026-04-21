@@ -2,12 +2,35 @@ import json
 import re
 import logging
 import asyncio
+import contextvars
 import anthropic
 from dataclasses import dataclass
 from prompts.classify import CLASSIFY_SYSTEM_PROMPT, build_classify_user_prompt
 import config
 
 logger = logging.getLogger(__name__)
+
+# Per-request usage akumuliatorius - resetinamas webhook'o pradžioje, kaupia visus
+# Claude call'us per vieno lead'o atsakymo apdorojimą. Skaitomas log_interaction metu.
+_usage_ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar("claude_usage", default=None)
+
+
+def reset_usage_context() -> None:
+    """Iškviečiama webhook'o pradžioje, prieš bet kokius Claude call'us."""
+    _usage_ctx.set({"tokens_in": 0, "tokens_out": 0, "tokens_cache_read": 0, "tokens_cache_write": 0, "cost_usd": 0.0})
+
+
+def get_usage_snapshot() -> dict:
+    """Grąžina dabartinio request'o suminę statistiką (arba nulius jei nebuvo reset'inta)."""
+    ctx = _usage_ctx.get()
+    if ctx is None:
+        return {"tokens_in": 0, "tokens_out": 0, "tokens_cache_read": 0, "cost_usd": 0.0}
+    return {
+        "tokens_in": ctx["tokens_in"],
+        "tokens_out": ctx["tokens_out"],
+        "tokens_cache_read": ctx["tokens_cache_read"],
+        "cost_usd": round(ctx["cost_usd"], 6),
+    }
 
 VALID_CATEGORIES = {"INTERESTED", "QUESTION", "NOT_NOW", "REFERRAL", "UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"}
 
@@ -26,17 +49,60 @@ class APIUnavailableError(Exception):
     pass
 
 
-async def call_claude_with_retry(*, model: str, max_tokens: int, system: str | None = None,
-                                  messages: list, max_retries: int = 3) -> str:
-    """Call Claude API with exponential backoff retry. Raises APIUnavailableError on permanent failure."""
+def _log_usage(model: str, response, purpose: str) -> None:
+    """Log token usage + cost as structured line. Safe - swallows errors.
+    Taip pat akumuliuoja į per-request contextvar (reset_usage_context + get_usage_snapshot)."""
+    try:
+        usage = response.usage
+        pricing = config.MODEL_PRICING.get(model, {})
+        input_tok = getattr(usage, "input_tokens", 0) or 0
+        output_tok = getattr(usage, "output_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cost = (
+            input_tok * pricing.get("input", 0)
+            + output_tok * pricing.get("output", 0)
+            + cache_read * pricing.get("cache_read", 0)
+            + cache_write * pricing.get("cache_write", 0)
+        ) / 1_000_000
+        logger.info(
+            f"claude_usage model={model} purpose={purpose} "
+            f"in={input_tok} out={output_tok} cache_read={cache_read} cache_write={cache_write} "
+            f"cost_usd={cost:.5f}"
+        )
+        ctx = _usage_ctx.get()
+        if ctx is not None:
+            ctx["tokens_in"] += input_tok
+            ctx["tokens_out"] += output_tok
+            ctx["tokens_cache_read"] += cache_read
+            ctx["tokens_cache_write"] += cache_write
+            ctx["cost_usd"] += cost
+    except Exception as e:
+        logger.debug(f"usage log failed: {e}")
+
+
+async def call_claude_with_retry(*, model: str, max_tokens: int, system=None,
+                                  messages: list, max_retries: int = 3,
+                                  cache_system: bool = False, purpose: str = "unknown") -> str:
+    """Call Claude API with exponential backoff retry. Raises APIUnavailableError on permanent failure.
+
+    If cache_system=True and `system` is a string, wraps it as a cacheable block (ephemeral, 5min TTL).
+    Pass `system` as a list of blocks to cache manually.
+    """
     client = get_anthropic_client()
+
+    if cache_system and isinstance(system, str) and system:
+        system_param = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    else:
+        system_param = system
 
     for attempt in range(max_retries):
         try:
             kwargs = {"model": model, "max_tokens": max_tokens, "messages": messages}
-            if system:
-                kwargs["system"] = system
+            if system_param:
+                kwargs["system"] = system_param
             response = await client.messages.create(**kwargs)
+            _log_usage(model, response, purpose)
             return response.content[0].text.strip()
 
         except anthropic.RateLimitError as e:
@@ -47,7 +113,7 @@ async def call_claude_with_retry(*, model: str, max_tokens: int, system: str | N
             await asyncio.sleep(wait)
 
         except anthropic.AuthenticationError as e:
-            # Bad API key or credits exhausted — no point retrying
+            # Bad API key or credits exhausted - no point retrying
             raise APIUnavailableError(f"Authentication failed (check API key/credits): {e}") from e
 
         except anthropic.APIStatusError as e:
@@ -100,10 +166,12 @@ async def classify_reply(reply_text: str, campaign_name: str, thread_position: i
 
     try:
         raw = await call_claude_with_retry(
-            model="claude-sonnet-4-20250514",
+            model=config.CLASSIFY_MODEL,
             max_tokens=256,
             system=CLASSIFY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            cache_system=True,
+            purpose="classify",
         )
         data = _extract_json(raw)
 

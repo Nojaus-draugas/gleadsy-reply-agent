@@ -1,13 +1,14 @@
 import asyncio
 import json
 import logging
-from core.classifier import classify_reply, APIUnavailableError
+from core.classifier import classify_reply, APIUnavailableError, reset_usage_context
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
 from core.instantly_client import send_reply
 from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error
 from core.self_improver import get_best_examples, get_anti_patterns
 from core.quality_reviewer import review_quality
+from core.hallucination_guard import check_reply as check_hallucinations
 from core.client_loader import get_client_by_campaign
 from db.database import (
     is_duplicate, reply_sent_within_cooldown, get_thread_reply_count,
@@ -39,7 +40,7 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
     lead_email = payload.get("lead_email", "")
     campaign_id = payload.get("campaign_id", "")
 
-    # 2a. In-flight guard — block concurrent webhook retries for same email
+    # 2a. In-flight guard - block concurrent webhook retries for same email
     if email_id and email_id in _in_flight:
         logger.warning(f"Webhook duplicate (in-flight) for email_id={email_id}; ignoring")
         return {"status": "ignored", "reason": "in_flight"}
@@ -59,6 +60,8 @@ async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_
 
 async def _process_reply(payload: dict, db, clients: dict, confidence_threshold: float,
                           email_id: str, lead_email: str, campaign_id: str) -> dict:
+    # Reset per-request Claude usage akumuliatorių (cost tracking)
+    reset_usage_context()
 
     # 3. Find client config
     client_config = get_client_by_campaign(clients, campaign_id)
@@ -113,7 +116,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
     except APIUnavailableError as e:
         logger.error(f"Claude API unavailable during classification for {lead_email}: {e}")
         await notify_error("claude_api_unavailable", f"Classification failed for {lead_email}: {e}")
-        await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas — klasifikacija nepavyko", reply_text)
+        await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas - klasifikacija nepavyko", reply_text)
         await log_interaction(db, {
             "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
             "lead_email": lead_email, "email_account": payload.get("email_account"),
@@ -157,7 +160,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 campaign_name=payload.get("campaign_name", ""), client_id=client_id,
                 lead_email=lead_email, company=payload.get("company_name", ""),
                 original_message=reply_text, classification="UNSUBSCRIBE",
-                confidence=classification.confidence, generated_reply="(unsubscribe — pašalintas)",
+                confidence=classification.confidence, generated_reply="(unsubscribe - pašalintas)",
                 sending_account=payload.get("email_account", ""), status="unsubscribed",
             )
         for prev in prev_interactions:
@@ -221,7 +224,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                         except APIUnavailableError as e:
                             logger.error(f"Claude API unavailable for meeting confirmation: {e}")
                             await notify_error("claude_api_unavailable", f"Meeting confirmation failed for {lead_email}: {e}")
-                            await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas — susitikimo patvirtinimas nepavyko", reply_text)
+                            await notify_escalation(lead_email, payload.get("campaign_name", ""), "Claude API nepasiekiamas - susitikimo patvirtinimas nepavyko", reply_text)
                             await log_interaction(db, {
                                 "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
                                 "lead_email": lead_email, "email_account": payload.get("email_account"),
@@ -334,7 +337,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         matched_faq_index = faq_result.get("faq_index")
         faq_confidence = faq_result.get("confidence", 0)
 
-        # If FAQ confidence is low — don't auto-reply, ask the human
+        # If FAQ confidence is low - don't auto-reply, ask the human
         if faq_confidence is not None and faq_confidence < 0.7:
             from core.email_notifier import notify_unknown_question_email
             if config.TEST_MODE:
@@ -356,7 +359,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 "was_sent": False, "thread_position": thread_position,
             })
             notify_unknown_question_email(lead_email, client_id, reply_text, iid)
-            logger.info(f"QUESTION with low FAQ confidence ({faq_confidence}) for {lead_email} — waiting for human")
+            logger.info(f"QUESTION with low FAQ confidence ({faq_confidence}) for {lead_email} - waiting for human")
             return {"status": "waiting_for_human", "interaction_id": iid, "reason": "FAQ no match"}
 
     # 12. Generate reply
@@ -369,12 +372,13 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             anti_patterns=anti_patterns,
             available_slots=available_slots,
             matching_faq=matching_faq,
+            thread_position=thread_position,
         )
     except APIUnavailableError as e:
         logger.error(f"Claude API unavailable during reply generation for {lead_email}: {e}")
         await notify_error("claude_api_unavailable", f"Reply generation failed for {lead_email}: {e}")
         await notify_escalation(lead_email, payload.get("campaign_name", ""),
-                               "Claude API nepasiekiamas — atsakymo generavimas nepavyko", reply_text)
+                               "Claude API nepasiekiamas - atsakymo generavimas nepavyko", reply_text)
         await log_interaction(db, {
             "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
             "lead_email": lead_email, "email_account": payload.get("email_account"),
@@ -385,6 +389,11 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         })
         return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
+    # 12a. Hallucination guard - deterministinis regex check'as prieš LLM quality review
+    hallucination_issues = check_hallucinations(agent_reply, client_config)
+    if hallucination_issues:
+        logger.warning(f"Hallucination guard triggered for {lead_email}: {hallucination_issues}")
+
     # 12b. Quality review
     quality = await review_quality(
         prospect_message=reply_text,
@@ -392,6 +401,12 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         generated_reply=agent_reply,
         client_name=client_config.get("client_name", client_id),
     )
+    # Force-fail jei halucinacijos - nepaisant LLM opinion'o
+    if hallucination_issues:
+        quality.passed = False
+        quality.score = min(quality.score, 3)
+        quality.issues = hallucination_issues + list(quality.issues)
+        quality.summary = f"[Hallucination guard] {'; '.join(hallucination_issues[:2])} | LLM: {quality.summary}"
     logger.info(f"Quality review for {lead_email}: score={quality.score}/10 passed={quality.passed}")
 
     if not quality.passed:
@@ -419,6 +434,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "agent_reply": agent_reply, "was_sent": False, "thread_position": thread_position,
             "quality_score": quality.score, "quality_issues": json.dumps(quality.issues, ensure_ascii=False),
             "quality_summary": quality.summary,
+            "improvement_suggestion": getattr(quality, "improvement_suggestion", "") or "",
         })
         return {"status": "quality_failed", "interaction_id": iid, "quality_score": quality.score}
 
@@ -469,6 +485,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         "thread_position": thread_position,
         "quality_score": quality.score, "quality_issues": json.dumps(quality.issues, ensure_ascii=False),
         "quality_summary": quality.summary,
+        "improvement_suggestion": getattr(quality, "improvement_suggestion", "") or "",
     })
 
     # 15. Slack notification

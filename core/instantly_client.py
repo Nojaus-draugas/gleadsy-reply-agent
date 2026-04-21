@@ -16,11 +16,11 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
     """Send reply via Instantly API V2.
 
     Retry policy is conservative to avoid double-sends:
-    - 429 (rate limit): retry with exponential backoff (safe — request not accepted)
+    - 429 (rate limit): retry with exponential backoff (safe - request not accepted)
     - Network errors (httpx.RequestError): retry (request likely never reached server)
-    - 5xx server errors: do NOT retry — server may have processed the send before
+    - 5xx server errors: do NOT retry - server may have processed the send before
       failing the response, retrying would duplicate the email to the prospect
-    - 4xx other than 429: do NOT retry — client error, retrying won't help
+    - 4xx other than 429: do NOT retry - client error, retrying won't help
     """
     payload = {
         "eaccount": email_account,
@@ -37,7 +37,7 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
                     headers=_headers(),
                 )
             except httpx.RequestError as e:
-                # Connection / timeout — request likely didn't reach server, safe to retry
+                # Connection / timeout - request likely didn't reach server, safe to retry
                 if attempt == 2:
                     raise
                 wait = 2 ** attempt
@@ -56,7 +56,7 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
                 await asyncio.sleep(wait)
                 continue
 
-            # Any other status (2xx success, 4xx, 5xx) — return or raise immediately.
+            # Any other status (2xx success, 4xx, 5xx) - return or raise immediately.
             # 5xx is intentionally NOT retried: the send may have succeeded server-side.
             response.raise_for_status()
             return response.json()

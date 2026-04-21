@@ -84,7 +84,7 @@ async def send_weekly_digest(stats: dict, week_start: str, week_end: str, confid
     conv = (meetings / total * 100) if total > 0 else 0
 
     text = (
-        f"📊 Savaitinė ataskaita ({week_start} — {week_end})\n\n"
+        f"📊 Savaitinė ataskaita ({week_start} - {week_end})\n\n"
         f"📩 Iš viso reply'ų: {total}\n"
         + "\n".join(cat_lines) + "\n\n"
         f"📅 Susitikimai suplanuoti: {meetings}\n"

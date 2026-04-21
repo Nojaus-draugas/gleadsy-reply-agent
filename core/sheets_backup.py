@@ -1,4 +1,4 @@
-"""Google Sheets backup for interactions — survives ephemeral Render disk wipes.
+"""Google Sheets backup for interactions - survives ephemeral Render disk wipes.
 
 Strategy: every log_interaction() also appends a row to a Google Sheet.
 On fresh DB startup, restore_from_sheet() pulls all rows back so classifications
@@ -73,7 +73,7 @@ def _ensure_header() -> None:
                 body={"values": [COLUMNS]},
             ).execute()
     except Exception as e:
-        # Sheet tab may not exist — try to create it
+        # Sheet tab may not exist - try to create it
         try:
             svc.spreadsheets().batchUpdate(
                 spreadsheetId=SHEET_ID,
@@ -90,7 +90,7 @@ def _ensure_header() -> None:
 
 
 def append_interaction(row: dict[str, Any]) -> None:
-    """Append a single interaction row. Safe to call — silent if disabled."""
+    """Append a single interaction row. Safe to call - silent if disabled."""
     svc = _get_service()
     if not svc:
         return

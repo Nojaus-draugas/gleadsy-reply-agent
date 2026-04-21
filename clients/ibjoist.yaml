@@ -7,7 +7,7 @@ campaigns:
   - "b16aea0f-2dce-42f0-8ba3-013a1181bdef"   # IBjoist - kitos statybos veiklos
 
 company_description: |
-  IBJOIST — lietuviška medinių I-sijų gamintoja. Gamina OSB I-sijas
+  IBJOIST - lietuviška medinių I-sijų gamintoja. Gamina OSB I-sijas
   stogams, perdangoms ir sienoms. Gamyba Lietuvoje, tiekimas visoje
   Europoje, daugiausia Skandinavijos ir Vakarų Europos rinkoms.
 
@@ -18,10 +18,40 @@ service_offering: |
   - Sienų rėmams
   Pilnas tiekimas nuo užsakymo iki pristatymo, gamyba iki 4 savaičių.
 
+# Resursai - kai prospect'as prašo nuotraukų/pavyzdžių/techninės info
+product_resources: |
+  TURIME 2 RESURSUS:
+
+  1) SVETAINĖS PUSLAPIS su sijų nuotraukomis ir technologijos aprašymu:
+     https://ibjoist.com/lt/i-joist-technologija/
+     (šio puslapio apačioje matosi visos sijų nuotraukos)
+
+  2) PDF KATALOGAS / KAINORAŠTIS - kainos pagal metrą, H-200 iki H-450,
+     techniniai brėžiniai ir skerspjūviai. Pridedamas rankomis kaip priedas.
+
+  KADA KURĮ NAUDOTI:
+
+  - Jei prospect'as prašo **nuotraukų** ar **pamatyti produktą** (pvz. "imeskit notraukas", "parodykite")
+    → Nukreipk į svetainę: "Geriausiai sijos matosi mūsų svetainėje šio puslapio apačioje:
+      https://ibjoist.com/lt/i-joist-technologija/"
+    → NEPRIDĖK PDF'o.
+
+  - Jei prospect'as prašo **kainų**, **techninės info** arba **katalogo**
+    → Pasiūlyk prisegti PDF: "Prisegu PDF'ą, kuriame surašytos kainos pagal metrą"
+    → SVARBU: Paulius turi RANKA pridėti PDF priedą prieš siunčiant.
+
+  - Jei prospect'as prašo ir nuotraukų IR info → nukreipk į svetainę + trumpą info, plus
+    gali paminėti: "Jei norėtumėte detalaus kainoraščio PDF - galiu prisegti."
+
+  FR: "Les photos de nos poutres sont visibles en bas de cette page :
+       https://ibjoist.com/lt/i-joist-technologija/"
+  EN: "You can see photos of our beams at the bottom of this page:
+       https://ibjoist.com/lt/i-joist-technologija/"
+
 value_proposition: |
   I-sijos yra 40% lengvesnės nei masyvios medienos sijos, tikslių matmenų,
   netraukia, neskyla ir neišsikraipo. Tarpatramiai iki 12m be tarpinių atramų.
-  Gamyba Lietuvoje — trumpi pristatymo terminai ir konkurencingos kainos.
+  Gamyba Lietuvoje - trumpi pristatymo terminai ir konkurencingos kainos.
 
 pricing: |
   Kainos nuo 5,50 €/m iki 10,90 €/m (+PVM), priklauso nuo sijos aukščio.
@@ -49,15 +79,15 @@ faq:
   - question: "Kiek kainuoja I-sijos?"
     answer: |
       Kainos nuo 5,50 €/m, priklauso nuo sijos aukščio ir kiekio.
-      Parašykite kokio aukščio ir kiek metrų reikia — paruošime tikslų pasiūlymą.
+      Parašykite kokio aukščio ir kiek metrų reikia - paruošime tikslų pasiūlymą.
   - question: "Per kiek laiko pagaminsite?"
     answer: |
-      Standartinis gamybos terminas — iki 4 savaičių nuo užsakymo patvirtinimo.
+      Standartinis gamybos terminas - iki 4 savaičių nuo užsakymo patvirtinimo.
       Tiksliau priklauso nuo užsakymo apimties.
   - question: "Koks minimalus užsakymas?"
     answer: |
       Dirbame tiek su vienkartiniais, tiek su nuolatiniais užsakymais.
-      Susisiekite — aptarsime pagal jūsų projekto poreikius.
+      Susisiekite - aptarsime pagal jūsų projekto poreikius.
   - question: "Ar pristatote?"
     answer: |
       Taip, pristatome visoje Lietuvoje. Pristatymo sąlygos aptariamos
@@ -66,32 +96,49 @@ faq:
     answer: |
       I-sijos 40% lengvesnės, tikslių matmenų, netraukia ir neišsikraipo.
       Galima pasiekti iki 12m tarpatramius be tarpinių atramų.
-  - question: "Ar galite atsiųsti techninę dokumentaciją?"
+  - question: "Ar galite atsiųsti techninę dokumentaciją / nuotraukų / pavyzdžių?"
     answer: |
-      Taip, galime atsiųsti technines specifikacijas ir sertifikatus.
-      Geriausia būtų aptarti per trumpą pokalbį — galėtume patarti
-      tinkamiausią sprendimą jūsų projektui.
+      Taip - prisegu PDF katalogą su visomis specifikacijomis, techniniais
+      brėžiniais ir sijų skerspjūviais (H-200 iki H-450). Jei po peržiūros
+      bus klausimų - galime susiskambinti ir aptarti konkretų projektą.
 
 boundaries:
   cannot_promise:
     - "Tikslių kainų be žinant kiekio ir sijos tipo"
     - "Terminų trumpesnių nei standartinis be atskiro aptarimo"
-    - "Montavimo paslaugų — tik tiekiame medžiagas"
+    - "Montavimo paslaugų - tik tiekiame medžiagas"
   escalate_topics:
     - "Teisiniai klausimai"
     - "Skundai ar pretenzijos dėl kokybės"
-    - "Labai dideli užsakymai — reikia atskiro aptarimo"
+    - "Labai dideli užsakymai - reikia atskiro aptarimo"
     - "Techniniai skaičiavimai ir projektavimas"
     - "Eksporto užsakymai į užsienį"
 
 tone:
   formality: "semi-formal"
   addressing: "Jūs"
-  language: "lt"
+  language: "auto"  # auto-detect iš prospect'o žinutės (LT, FR, EN - visos IBJOIST kampanijoje)
   personality: |
-    Dalykiškas ir konkretus. Kalba statybininkų kalba — apie matmenis,
+    Dalykiškas ir konkretus. Kalba statybininkų kalba - apie matmenis,
     kainas, terminus. Neverčia, bet aiškiai siūlo kitą žingsnį.
     Trumpi sakiniai. Vengia korporatyvinio žargono.
+    Pauliaus pasirašymas IBJOIST kontekste NEturi "Pagarbiai" - tiesiog
+    blokas su įmonės vardu ir telefonu (žr. sign_off).
+    FR kontekste vietoj "Linkėjimai" naudok "Cordialement".
   max_reply_length_sentences: 5
-  sign_off: "Pagarbiai"
+  sign_off: "Paulius\nIBJOIST\n+37067040775"
   sender_name: "Paulius"
+
+# Kampanijos skirtingose kalbose - FR yra Ossature Bois France kampanija
+language_hints: |
+  FR (Ossature Bois France) - jei prospect'as atsako prancūziškai:
+    - Adresuokis "Bonjour" (ne "Sveiki")
+    - Dydžiai: "de 200mm à 450mm de hauteur", "portées jusqu'à 12m"
+    - Svorio palyginimas: "40% plus légères que le bois massif"
+    - Kainos: "à partir de 5,50 €/m HT"
+    - "I-sijos" → "poutres en I" arba "solives en I"
+    - Sign-off: "Cordialement,\nPaulius\nIBJOIST\n+37067040775"
+  EN - jei prospect'as atsako angliškai:
+    - "Hi [Name]" / "Hello"
+    - "I-joists", "from 5.50 €/m (excl. VAT)"
+    - Sign-off: "Best regards,\nPaulius\nIBJOIST\n+37067040775"

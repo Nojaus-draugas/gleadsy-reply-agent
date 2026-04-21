@@ -1,38 +1,121 @@
 # gleadsy-reply-agent/clients/puoskio-spauda.yaml
+# Vienas YAML - veikia visoms 4 naujoms kampanijoms (Mokyklos, Stovyklos, Sportas, Renginiai)
+# + originaliai šokių studijų/sporto salių kampanijai.
+# Reply agent skaito gavėjo žinutės kontekstą - segmentas natūraliai matosi iš jo reply'o.
+
 client_id: "puoskio-spauda"
 client_name: "Puoškio Spauda"
 
 campaigns:
+  # Originali kampanija (šokių studijos + sporto salės)
   - "ec8d8f52-5d91-400c-9d75-673431fc6b47"
+  # TODO: po Instantly kampanijų sukūrimo pridėti 4 naujus ID:
+  # - "XXXX-MOKYKLOS-CAMPAIGN-ID"
+  # - "XXXX-STOVYKLOS-CAMPAIGN-ID"
+  # - "XXXX-SPORTAS-CAMPAIGN-ID"
+  # - "XXXX-RENGINIAI-CAMPAIGN-ID"
 
 company_description: |
-  Puoškio Spauda — lietuviška tekstilės spausdinimo įmonė, specializuojasi
-  individualioje spauda ant sportinės aprangos: marškinėlių, formų, treningų,
-  liemenių ir kitos sporto tekstilės. Dirbame su komandoms, klubams ir studijoms
-  visoje Lietuvoje.
+  Puoškio Spauda - lietuviška tekstilės spausdinimo įmonė. Specializuojamės DTF
+  spaudoje ant marškinėlių, džemperių, hoodie'ų ir kitos tekstilės - su logotipu,
+  dizainu ar individualiu sprendimu. Dirbame su mokyklomis, stovyklomis, sporto
+  klubais, renginių organizatoriais ir kitais kolektyvais visoje Lietuvoje.
+  Paulius - įkūrėjas, tiesiogiai bendrauja su klientais.
 
 service_offering: |
-  Logotipų ir dizainų spausdinimas ant sportinės aprangos:
-  marškinėlių, uniformų, treningų, šortelių ir kitos tekstilės.
-  Teikiame visą paslaugą — nuo dizaino parengimo iki gatavo produkto pristatymo.
+  DTF spauda ant tekstilės: marškinėliai, džemperiai, hoodie'ai, polo.
+  Nuo dizaino paruošimo spaudai iki gatavo produkto - viskas vienoje vietoje.
+  Dizainą (logotipą ar pan.) klientas atsiunčia pats; mes paruošiame spaudai
+  ir perkeliame ant tekstilės. Siuntimas - per Omniva į visą Lietuvą.
+
+product_specs: |
+  === PRODUKTO SPECIFIKACIJOS ===
+
+  DYDŽIAI: praktiškai visi galimi (XS-5XL suaugusiems; vaikų dydžiai taip pat).
+    Medžiagas užsakome iš tiekėjų pagal konkretų užsakymą - todėl dydžių
+    spektras platus. Klientui pasakyk: "Praktiškai bet kokie dydžiai - nuo
+    vaikų iki 5XL. Užsakome pagal jūsų dydžių sąrašą."
+
+  SPALVOS: galime užsakyti praktiškai bet kokias spalvas, kurių reikia.
+    Standartiškai - juoda, balta, pilka, tamsiai mėlyna; bet jei klientui
+    reikia specifinės spalvos (pvz. klubo raudonos) - užsakome pagal poreikį.
+
+  MEDŽIAGA: dažniausiai medvilnė (100% arba mix), bet priklauso nuo poreikio.
+    Jei klientas nori specifiškos medžiagos (pvz. organinė, storesnė, sporto
+    funkcinė) - galima užsakyti. Svoris paprastai 150-200 g/m².
+
+  SPAUDOS DYDIS: iki A4. Jei klientui reikia didesnės spaudos (visas priekis,
+    nugara "visa drobė") - pakalbėkime atskirai, gali reikėti kitokio sprendimo.
+
+  DVIEJŲ PUSIŲ SPAUDA (priekis + nugara): galima. Kainuoja keliais eurais
+    daugiau už vienetą, priklausomai nuo dizaino.
+
+  RANKOVIŲ / KAPIŠONO SPAUDA: įmanoma, aptariame individualiai.
+
+  BROKAS / GARANTIJA: jei kilus brokui (mūsų klaida) - perdarome nemokamai.
 
 value_proposition: |
-  Greitas terminas, kokybiška spauda ir galimybė užsakyti net nuo mažo kiekio.
-  Jūsų studija ar komanda atrodys profesionaliai ir vieningai.
+  Drabužiai su logotipu ar dizainu - tai, kas jungia grupę ir lieka kaip
+  atsiminimas. Ar tai klasės hoodie, stovyklos marškinėliai dalyviams,
+  klubo merch nariams, ar renginio dalyvio atributika - procesas tas pats:
+  greitas terminas (7-10 d.d.), mažas minimumas (nuo 10 vnt.) ir kokybiška
+  DTF spauda, kuri išlaiko daug skalbimų.
 
 pricing: |
-  Kaina priklauso nuo kiekio, spausdinimo būdo ir aprangos tipo.
-  Konkrečią kainą pateikiame pagal užklausą — tiesiog parašykite kiek vienetų
-  ir kokio tipo apranga jums reikia.
+  Kaina priklauso nuo medžiagos kokybės ir spaudos. Žemiau - keli preliminarūs
+  variantai pagal produktą ir kiekį. Jei klientas prašo kainų, pateik šiuos
+  variantus ir PABRĖŽK, kad kainos PRELIMINARIOS - tikslų pasiūlymą paruošiame
+  žinodami konkretų kiekį, dizainą ir medžiagos pasirinkimą.
+
+  === PRELIMINARIOS KAINOS ===
+
+  POLO MARŠKINĖLIAI (geras kainos/kokybės santykis):
+    1-4 vnt.    - taikoma minimali projekto suma 50,00 € + PVM
+    5-9 vnt.    - 13,50 € + PVM / vnt.
+    10-20 vnt.  - 11,50 € + PVM / vnt.
+    21-30 vnt.  - 10,50 € + PVM / vnt.
+    31-50 vnt.  -  9,50 € + PVM / vnt.
+    100+ vnt.   -  8,20 € + PVM / vnt.
+
+  STANDARTINIAI MARŠKINĖLIAI su spauda:
+    1-4 vnt.    - taikoma minimali projekto suma 50,00 € + PVM
+    5-9 vnt.    - 14,00 € + PVM / vnt.
+    10-20 vnt.  - 11,00 € + PVM / vnt.
+    21-30 vnt.  -  8,50 € + PVM / vnt.
+    31-50 vnt.  -  7,50 € + PVM / vnt.
+    100+ vnt.   - nuo 4,70 € + PVM / vnt.
+
+  PREMIUM DŽEMPERIAI BE GOBTUVO (sweatshirts):
+    1-4 vnt.    - taikoma minimali projekto suma 50,00 € + PVM
+    5-9 vnt.    - 24,00 € + PVM / vnt.
+    10-20 vnt.  - 19,00 € + PVM / vnt.
+    21-30 vnt.  - 17,50 € + PVM / vnt.
+    31-50 vnt.  - 16,00 € + PVM / vnt.
+    100+ vnt.   - 14,50 € + PVM / vnt.
+
+  PREMIUM DŽEMPERIAI SU GOBTUVU (hoodie'ai) su spauda:
+    1-4 vnt.    - taikoma minimali projekto suma 50,00 € + PVM
+    5-9 vnt.    - 27,00 € + PVM / vnt.
+    10-20 vnt.  - 24,00 € + PVM / vnt.
+    21-30 vnt.  - 20,00 € + PVM / vnt.
+
+  PASTABA: džemperiai be gobtuvo - šiek tiek pigesni;
+  džemperiai su užtrauktuku - šiek tiek brangesni.
+
+  SVARBU: visos kainos PRELIMINARIOS. Galutinė kaina priklauso nuo
+  pasirinktos medžiagos kokybės, spaudos tipo ir dizaino sudėtingumo.
 
 target_audience: |
-  Šokio ir sporto studijų vadovai Lietuvoje, ieškantys vienodų formų
-  savo mokiniams ar sportininkams.
+  Grupės ir kolektyvai, kurie nori drabužių su logotipu ar dizainu:
+    • Mokyklos - klasės merch, abiturientų hoodie, būrelių komplektai, ekskursijų marškinėliai
+    • Stovyklos - dalyvių marškinėliai ir hoodie'ai, vadovų komplektai, sezoniniai dizainai
+    • Sporto klubai - nariams, treniruočių merch, komandų identitetas
+    • Renginių organizatoriai - dalyvių merch, staff uniformos, festivalių/konferencijų atributika
 
 meeting:
   participant_from_client: "Paulius, Puoškio Spauda įkūrėjas"
-  purpose: "Aptarti jūsų studijos aprangos poreikius ir paruošti pasiūlymą"
-  duration_minutes: 30
+  purpose: "Aptarti jūsų poreikius (kiekius, dizainą, terminą) ir paruošti konkretų pasiūlymą"
+  duration_minutes: 20
   google_calendar_id: "primary"
   working_hours:
     start: "09:00"
@@ -45,47 +128,230 @@ meeting:
 faq:
   - question: "Kiek tai kainuoja?"
     answer: |
-      Kaina priklauso nuo kiekio ir aprangos tipo. Kuo daugiau vienetų —
-      tuo geresnė kaina. Parašykite apytikslį kiekį ir paruošime pasiūlymą.
+      Kaina priklauso nuo medžiagos kokybės ir spaudos. Turime kelis variantus -
+      pateik klientui preliminarų pasiūlymą iš `pricing` sekcijos pagal produktą,
+      kurio jis klausia (polo, marškinėliai, džemperiai, hoodie'ai), ir PABRĖŽK,
+      kad kainos PRELIMINARIOS. Tikslų pasiūlymą paruošiame sužinoję konkretų
+      kiekį, dizainą ir medžiagos pasirinkimą.
+
   - question: "Koks minimalus užsakymas?"
     answer: |
-      Dirbame ir su mažais kiekiais — galima užsisakyti jau nuo kelių vienetų.
-      Tiksli minimali riba priklauso nuo pasirinkto produkto.
+      Nuo 10 vienetų. Tai patogu ir mažoms klasėms, smenoms, ar komandoms -
+      nereikia pirkti 50 vnt., kad pradėtumėte.
+
   - question: "Per kiek laiko pagaminsite?"
     answer: |
-      Standartinis terminas — 7–14 darbo dienų nuo dizaino patvirtinimo.
-      Skubūs užsakymai galimi atskirai aptarus.
+      Standartinis terminas - 7-10 darbo dienų nuo dizaino patvirtinimo.
+      Jei reikia skubiau, pakalbėkim - kartais išeina per savaitę.
+
   - question: "Ar galite padėti su dizainu?"
     answer: |
-      Taip! Galime pritaikyti jūsų logotipą ar dizainą spausdinimui.
-      Jei dar neturite — galime pasiūlyti paprastą variantą.
+      Dizainą pateikia pats klientas - mes spauda specializuojamės, ne
+      dizaine. Jei turite logotipą ar paruoštą dizaino failą (AI, PDF, SVG,
+      PNG/JPG), tiesiog atsiųskite email'u. Peržiūrėsim, ar failo kokybė
+      tinkama spaudai. Jei dar neturite dizaino - rekomenduojame pirma
+      susitarti dėl jo su dizaineriu, tada pas mus grįžti su galutiniu failu.
+
   - question: "Kokia spausdinimo kokybė?"
     answer: |
-      Naudojame aukštos kokybės spausdinimo technologijas, atsparias
-      dažnam plovimui — svarbu sportinei aprangai.
+      Naudojame DTF spaudą - ji išlaiko 50+ skalbimų, spalvos ryškios,
+      nejaučiasi ant odos. Tinka tekstilei, kuri bus dėvima ne vienąkart.
+
+  - question: "Ar tinka vaikams / mokiniams / stovyklų dalyviams?"
+    answer: |
+      Taip. DTF spauda saugi - be jokių vaiko odai pavojingų medžiagų.
+      Dažnai gaminame vaikų stovykloms, mokyklų klasėms, jaunimo grupėms.
+
   - question: "Ar pristatote į visą Lietuvą?"
     answer: |
-      Taip, pristatome į visą Lietuvą. Pristatymo sąlygos aptariamos
-      užsakymo metu.
+      Taip, siunčiame per Omniva į visą Lietuvą. Pristatymo kaina priklauso
+      nuo siuntos dydžio - detales aptariame užsakymo metu.
+
+  - question: "Ar galite pagaminti mažą testinį kiekį prieš didelį užsakymą?"
+    answer: |
+      Taip. Jei nerimaujate dėl dizaino ar tekstilės, galima padaryti
+      1-3 vnt. testą prieš pilną užsakymą - pamatysite, kaip viskas atrodo.
+
+  - question: "Kokie dydžiai galimi?"
+    answer: |
+      Praktiškai bet kokie - nuo vaikų dydžių iki 5XL suaugusiems.
+      Medžiagas užsakome iš tiekėjų pagal kiekvieną užsakymą, todėl
+      klientas atsiunčia savo dydžių sąrašą, ir mes užsakome tiksliai
+      tokius.
+
+  - question: "Kokios spalvos galimos?"
+    answer: |
+      Galime užsakyti praktiškai bet kokias spalvas, kurių reikia.
+      Standartiškai turime juodą, baltą, pilką, tamsiai mėlyną -
+      bet jei reikia specifinės spalvos (pvz. klubo raudonos ar
+      stovyklos žalios), užsakome pagal poreikį.
+
+  - question: "Kokia medžiaga?"
+    answer: |
+      Dažniausiai dirbame su medvilne (100% arba mix), bet priklauso
+      nuo poreikio - galima užsakyti ir kitokias medžiagas (pvz.
+      organines, storesnes, sporto funkcines). Parašykite, kokiam
+      tikslui - patarsim, kuri medžiaga tiks geriausiai.
+
+  - question: "Koks maksimalus spaudos dydis?"
+    answer: |
+      Iki A4. Jei reikia didesnės spaudos (pvz. visa priekinė dalis
+      ar nugara kaip drobė) - pakalbėkime atskirai, gali reikėti
+      kitokio sprendimo.
+
+  - question: "Ar galima spauda iš abiejų pusių (priekis + nugara)?"
+    answer: |
+      Taip, galima. Kainuoja keliais eurais daugiau už vienetą,
+      priklausomai nuo dizaino sudėtingumo.
+
+  - question: "Kaip atsiskaityti? Ar galite išrašyti sąskaitą faktūrą?"
+    answer: |
+      Taip, išrašome sąskaitą faktūrą. Apmokėjimas galimas po darbų -
+      jokio avanso nereikia. Tai patogu mokykloms, VšĮ ir įmonėms,
+      kurios dirba pagal vidinius atsiskaitymo terminus.
+
+  - question: "Kaip atsiųsti dizainą / logotipą?"
+    answer: |
+      Tiesiog atsiųskite email'u failą su logotipu ar dizainu
+      (AI, PDF, SVG arba kokybiška PNG nuotrauka tinka). Jei turite
+      kelias versijas - atsiųskite, padėsim parinkti geriausiai
+      spaudai tinkančią.
+
+  - question: "Ar galite parodyti darbų pavyzdžių / portfolio?"
+    answer: |
+      Mūsų darbus galima pamatyti bendrinėje parduotuvėje, kur kiekvieną
+      prekę tokiu pat būdu spausdiname: https://www.puoskislietuviskai.lt/
+      Jei reikia konkretesnių pavyzdžių pagal jūsų atvejį (mokykla, stovykla,
+      sportas, renginys) - parašykit, kas jus konkrečiai domina ;)
+
+discovery_questions: |
+  Kai klientas rašo bendrai (pvz. "domėtų marškinėliai komandai"),
+  NEIŠDĖSTYK iš karto visų kainų ir detalių - užduok discovery klausimų,
+  kad galėtum paruošti konkretų pasiūlymą. NE visus iš karto - vieną-du per
+  reply, natūraliai, pokalbio forma.
+
+  Prioritetinė seka:
+    1. KIEKIS - "Apytiksliai kiek vienetų galvojate?"
+       (Tai leis duoti teisingą kainų tier'ą iš pricing sekcijos.)
+
+    2. PRODUKTO TIPAS - "Marškinėliai, polo, hoodie'ai ar džemperiai?"
+       (Jei klientas nepasakė - tai svarbu kainai ir pristatymui.)
+
+    3. DIZAINAS - "Ar turite logotipą/dizainą, kurį atsiųstumėt? Jei ne -
+       galim padėt paprastu variantu."
+
+    4. DYDŽIŲ SPEKTRAS - "Kokie dydžiai reikalingi? (Vaikų/suaugusiųjų,
+       XS-XXL ir pan.)"
+
+    5. TERMINAS - "Iki kada reikia? Standartas 7-10 d.d. nuo dizaino
+       patvirtinimo."
+
+    6. PASKIRTIS - "Kam bus naudojami? (Padeda patarti medžiagą/spaudą)"
+       Pvz: stovykla lauke vasarą - poliesteris/dry-fit gali tikti labiau
+       nei medvilnė.
+
+  Kai turi 3+ atsakymus - gali pateikti preliminarią kainą iš pricing sekcijos.
+
+common_objections: |
+  Pagrindiniai klientų argumentai/abejonės - kaip atsakyti. NIEKADA negink-
+  nuolankiai, BET ir nenusileisk be argumento.
+
+  "PER BRANGU / RADOM PIGIAU":
+    - Pabrėžk DTF kokybę: išlaiko 50+ skalbimų, spalvos neblunka,
+      nejaučiasi ant odos.
+    - Pabrėžk, kad dirbame Lietuvoje, greitas terminas, sąskaita faktūra,
+      galima sąskaitą mokėti po darbų (nereikia avanso).
+    - Paklausk: "Kokia medžiaga ir spaudos tipas kituose pasiūlymuose?" -
+      dažnai konkurentai pigesni, nes naudoja lankstinę/siete spaudą, kuri
+      nuplyša po kelių skalbimų.
+    - Jei realiai per brangu jų biudžetui - pasiūlyk pigesnį produkto
+      variantą (standartinius marškinėlius vietoj polo, sweatshirt vietoj
+      hoodie).
+
+  "REIKIA LABAI SKUBIAI (3-5 DIENOS)":
+    - Aiškiai pasakyk: "Standartas 7-10 d.d. Skubiam užsakymui galim
+      pakalbėti - kartais išeina per 5-7 d.d., bet priklauso nuo dizaino
+      ir tekstilės prieinamumo pas tiekėją."
+    - NIEKADA negalvok žadėti konkretaus termino be Pauliaus patvirtinimo.
+
+  "DAROM PATYS / IRON-ON SPAUDA NAMUOSE":
+    - "Tai supranta - bet DTF spauda yra profesionali, išlaiko daugybę
+      skalbimų, nebyra ir neluppa kaip iron-on. Jei vaikas dėvės marškinėlį
+      visą vasarą ir maudis - DTF tvirtesnė."
+    - Jei kiekis mažas (5-10 vnt.) - paminėk mūsų min. projekto sumą 50€.
+
+  "SVARSTOME / ATSAKYSIM VĖLIAU":
+    - Neveržk. Pasakyk: "Supratau. Jei reikėtų kokių detalių ar konkretaus
+      pasiūlymo su kaina - tiesiog parašykit, paruošiu per dieną."
+    - Follow-up agent'as gali siųsti po 5-7 dienų paklausti "kaip sekasi?".
+
+  "JAU TURIM SAVO SPAUSTUVĘ / TIEKĖJĄ":
+    - "Supratau. Jei kada prireiks alternatyvos arba didesnio kiekio /
+      specifinio užsakymo, kurį dabartinis tiekėjas negali padaryti -
+      parašykit, pagalvosim."
+
+design_policy: |
+  Dizainą pateikia KLIENTAS (dažniausiai logotipą ar paruoštą dizaino failą).
+  Mes patys dizaino nekuriame - tik paruošiame spaudai ir perkeliame ant tekstilės.
+
+  KOKIE FAILAI TINKA:
+    - Vektoriniai: AI, PDF, SVG - geriausia, spauda bus aštri bet kokiu dydžiu
+    - Rastriniai: PNG (min 300 DPI), JPG (aukštos kokybės) - tinka, jei
+      pakankamai aštrus reikiamu dydžiu
+
+  KOKIE NEtinka:
+    - Maži, neryškūs logotipai iš Facebook/Instagram profilio
+    - Nuotrauka su telefonu iš ekrano ar iš maišelio/marškinėlio
+    - Word/PowerPoint screenshot'as
+    - Per mažos rezoliucijos PNG/JPG (pikseliai matomi padidinus)
+
+  KAIP DIRBAME:
+    1. Klientas atsiunčia dizaino failą email'u
+    2. Mes peržiūrime - ar kokybė tinkama spaudai
+    3. Jei TAIP - spausdinam, siunčiam per Omniva
+    4. Jei NE - parašom klientui, paprašom geresnio failo ar vektorinės versijos
+
+  JOKIŲ MOCKUP'Ų / PEER'Ų PRIEŠ SPAUDĄ mes standartiškai nedarome.
+  Klientui pasakyk: "Dizainą atsiųskite email'u (AI, PDF, SVG arba kokybiška
+  PNG/JPG). Peržiūrėsim, ar kokybė tinkama spaudai - jei viskas gerai,
+  spausdinam. Jei failo kokybė prasta, paprašom geresnio, prieš pradedant
+  gamybą."
+
+  Jei klientas PRIMYGTINAI nori mockup'o (dizaino ant marškinėlio vizualizacijos)
+  prieš užsakymą - ESCALATE Pauliui, tai nėra standartinis procesas.
 
 boundaries:
   cannot_promise:
-    - "Konkrečios kainos be žinant kiekio ir aprangos tipo"
-    - "Terminų trumpesnių nei standartinis be atskiro aptarimo"
-    - "Dizaino paslaugų, kurios neįeina į standartinį paketą"
+    - "Konkrečios kainos be žinant kiekio ir tekstilės tipo"
+    - "Termino trumpesnio nei 7 d.d. be atskiro aptarimo"
+    - "Dizaino kūrimo paslaugų - dizainą pateikia klientas, mes tik paruošiame spaudai"
+    - "Siuvimo ar tekstilės gamybos nuo nulio - mes tik spauda"
+    - "Mockup'ų ar darbų pavyzdžių nuotraukų - kol nėra viešo portfolio"
+    - "Tikslios pristatymo kainos be žinant siuntos dydžio"
+
   escalate_topics:
-    - "Teisiniai klausimai"
+    - "Teisiniai klausimai (autorinių teisių dizainai, prekių ženklai)"
     - "Skundai ar pretenzijos dėl kokybės"
-    - "Labai dideli užsakymai (500+ vnt.) — reikia atskiro aptarimo"
-    - "Prašymai susisiekti su konkrečiu žmogumi"
+    - "Labai dideli užsakymai (500+ vnt.) - reikia atskiro aptarimo"
+    - "Prašymai susisiekti konkrečiai su Pauliumi telefonu"
+    - "Netipinė tekstilė (neįprastos medžiagos, specialūs gaminiai)"
+    - "Prašymai darbų pavyzdžių / portfolio / mockup'ų - kol neturim viešo"
+    - "Viešųjų pirkimų procedūros (mokykloms, savivaldybėms)"
+    - "Labai skubūs užsakymai (<7 d.d.)"
+    - "Didelės dydžio spaudos poreikiai (virš A4)"
 
 tone:
   formality: "semi-formal"
   addressing: "Jūs"
   language: "lt"
   personality: |
-    Draugiškas ir konkretus. Kalba apie praktinius dalykus — kiekius, terminus,
-    kainas. Neverčia, bet aiškiai siūlo kitą žingsnį. Trumpi sakiniai.
+    Draugiškas, konkretus ir žmogiškas. Kalba kaip Paulius, ne kaip agentūra.
+    Casual elementai: ";)" emoji gale tinka ("Leiskite žinoti, kas jus konkrečiai domina ;)").
+    Atsakymuose - praktiški dalykai: kiekiai, terminai, kainos.
+    Neverčia pirkti, bet aiškiai rodo kitą žingsnį.
+    Trumpi sakiniai. Be "galime pasiūlyti", be "tikiuosi jums sekasi".
+    Gali pradėti mažu žmogišku prisilietimu ("Ačiū, kad parašėte...",
+    "Smagu, kad susidomėjote..."), bet pagrindas - konkretus atsakymas.
   max_reply_length_sentences: 5
-  sign_off: "Pagarbiai"
+  sign_off: "Linkėjimai,"
   sender_name: "Paulius"

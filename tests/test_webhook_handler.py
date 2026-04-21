@@ -98,8 +98,10 @@ async def test_interested_first_time_sends_reply_with_slots(db, mock_clients):
     payload = _load_fixture("reply_interested.json")
     mock_slots = [{"date": "2026-04-02", "day_name": "trečiadienį", "time": "10:00", "end": "10:30", "iso": "2026-04-02T10:00:00+03:00"}]
 
+    from core.quality_reviewer import QualityResult
     with patch("webhooks.instantly_webhook.classify_reply") as mock_cls, \
          patch("webhooks.instantly_webhook.generate_reply", return_value="Puiku! Siūlau trečiadienį 10:00.") as mock_gen, \
+         patch("webhooks.instantly_webhook.review_quality", return_value=QualityResult(score=9, passed=True, issues=[], summary="ok")), \
          patch("webhooks.instantly_webhook.send_reply", return_value={}) as mock_send, \
          patch("webhooks.instantly_webhook.get_free_slots", return_value=mock_slots), \
          patch("webhooks.instantly_webhook.notify_reply_sent"):
@@ -117,9 +119,11 @@ async def test_interested_first_time_sends_reply_with_slots(db, mock_clients):
 @pytest.mark.asyncio
 async def test_question_sends_reply(db, mock_clients):
     payload = _load_fixture("reply_question.json")
+    from core.quality_reviewer import QualityResult
     with patch("webhooks.instantly_webhook.classify_reply") as mock_cls, \
          patch("webhooks.instantly_webhook.match_faq", return_value={"faq_index": 0, "confidence": 0.9, "adapted_answer": "Kainos individualios."}), \
          patch("webhooks.instantly_webhook.generate_reply", return_value="Kainos priklauso nuo poreikių.") as mock_gen, \
+         patch("webhooks.instantly_webhook.review_quality", return_value=QualityResult(score=9, passed=True, issues=[], summary="ok")), \
          patch("webhooks.instantly_webhook.send_reply", return_value={}), \
          patch("webhooks.instantly_webhook.notify_reply_sent"):
         mock_cls.return_value = AsyncMock(category="QUESTION", confidence=0.88, reasoning="Klausia apie kainą")
@@ -151,8 +155,10 @@ async def test_low_confidence_escalates(db, mock_clients):
 async def test_cooldown_blocks_reply(db, mock_clients):
     # First reply goes through
     payload1 = _load_fixture("reply_interested.json")
+    from core.quality_reviewer import QualityResult
     with patch("webhooks.instantly_webhook.classify_reply") as mock_cls, \
          patch("webhooks.instantly_webhook.generate_reply", return_value="Reply"), \
+         patch("webhooks.instantly_webhook.review_quality", return_value=QualityResult(score=9, passed=True, issues=[], summary="ok")), \
          patch("webhooks.instantly_webhook.send_reply", return_value={}), \
          patch("webhooks.instantly_webhook.get_free_slots", return_value=[]), \
          patch("webhooks.instantly_webhook.notify_reply_sent"):

@@ -35,7 +35,7 @@ def format_faq_list(faq: list[dict]) -> str:
 
 def format_slots_for_prompt(slots: list[dict]) -> str:
     if not slots:
-        return "Laisvų laikų šiuo metu nėra — pasiūlyk prospektui pasirinkti jam patogų laiką."
+        return "Laisvų laikų šiuo metu nėra - pasiūlyk prospektui pasirinkti jam patogų laiką."
     parts = []
     for s in slots:
         parts.append(f"{s['day_name']} ({s['date']}) {s['time']}")

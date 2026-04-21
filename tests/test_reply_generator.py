@@ -23,7 +23,7 @@ async def test_generate_reply_interested():
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-    with patch("core.reply_generator.get_anthropic_client", return_value=mock_client):
+    with patch("core.classifier.get_anthropic_client", return_value=mock_client):
         result = await generate_reply(
             prospect_message="Taip, domina",
             classification="INTERESTED",
@@ -42,7 +42,7 @@ async def test_generate_reply_question():
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-    with patch("core.reply_generator.get_anthropic_client", return_value=mock_client):
+    with patch("core.classifier.get_anthropic_client", return_value=mock_client):
         result = await generate_reply(
             prospect_message="Kiek tai kainuoja?",
             classification="QUESTION",
@@ -61,7 +61,7 @@ async def test_match_faq():
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-    with patch("core.reply_generator.get_anthropic_client", return_value=mock_client):
+    with patch("core.classifier.get_anthropic_client", return_value=mock_client):
         result = await match_faq("Kiek kainuoja?", MOCK_CLIENT["faq"])
     assert result["faq_index"] == 0
     assert result["confidence"] == 0.9
@@ -75,7 +75,7 @@ async def test_parse_time_confirmation():
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-    with patch("core.reply_generator.get_anthropic_client", return_value=mock_client):
+    with patch("core.classifier.get_anthropic_client", return_value=mock_client):
         result = await parse_time_confirmation(
             "Ketvirtadienis 14:00 tinka",
             '[{"date":"2026-04-02","time":"10:00"},{"date":"2026-04-03","time":"14:00"}]',
@@ -92,7 +92,7 @@ async def test_parse_time_confirmation_unclear():
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-    with patch("core.reply_generator.get_anthropic_client", return_value=mock_client):
+    with patch("core.classifier.get_anthropic_client", return_value=mock_client):
         result = await parse_time_confirmation("Hmm gal", "[]")
     assert result["confirmed_slot_index"] is None
     assert result["confidence"] == 0.0

@@ -64,10 +64,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_weekly_digest, "cron", day_of_week="mon", hour=9, args=[db], id="weekly_digest")
     scheduler.add_job(run_confidence_calibrator, "cron", day_of_week="sun", hour=23, args=[db], id="confidence_calibrator")
 
-    # Webhook-only mode. No polling — if Instantly webhook stops delivering,
+    # Webhook-only mode. No polling - if Instantly webhook stops delivering,
     # webhook_silence_monitor below will page Slack.
 
-    # Periodic health monitoring — check API keys, DB, notify Slack on issues
+    # Periodic health monitoring - check API keys, DB, notify Slack on issues
     async def health_monitor():
         from core.slack_notifier import notify_error
         issues = []
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             issues.append(f"DB error: {e}")
 
-        # Check Anthropic API key validity (lightweight — just verify key format)
+        # Check Anthropic API key validity (lightweight - just verify key format)
         if not config.ANTHROPIC_API_KEY:
             issues.append("ANTHROPIC_API_KEY is empty!")
         elif not config.ANTHROPIC_API_KEY.startswith("sk-ant-"):
@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.add_job(health_monitor, "interval", hours=1, id="health_monitor")
 
-    # Webhook silence monitor — alerts if no Instantly webhook received during business hours.
+    # Webhook silence monitor - alerts if no Instantly webhook received during business hours.
     # Checks last received webhook timestamp (tracked on /webhook/instantly POST).
     # Fires once per silence streak; reset when a webhook arrives.
     async def webhook_silence_monitor():
@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
                 f"Patikrink Instantly → Integrations → Webhooks.",
             )
             _webhook_state["alerted_silence"] = True
-            logger.error(f"Webhook silence {silence_h:.1f}h — Slack alerted")
+            logger.error(f"Webhook silence {silence_h:.1f}h - Slack alerted")
 
     _webhook_state["service_started_at"] = datetime.utcnow()
     scheduler.add_job(webhook_silence_monitor, "interval", minutes=30, id="webhook_silence_monitor")
@@ -125,13 +125,13 @@ async def lifespan(app: FastAPI):
 
     # Startup warnings
     if not config.WEBHOOK_SECRET:
-        logger.warning("⚠️  WEBHOOK_SECRET not set — webhook endpoint is UNPROTECTED!")
+        logger.warning("⚠️  WEBHOOK_SECRET not set - webhook endpoint is UNPROTECTED!")
     if not config.DASHBOARD_PASSWORD:
-        logger.warning("⚠️  DASHBOARD_PASSWORD not set — dashboard is UNPROTECTED!")
+        logger.warning("⚠️  DASHBOARD_PASSWORD not set - dashboard is UNPROTECTED!")
     if not config.ANTHROPIC_API_KEY:
-        logger.error("❌ ANTHROPIC_API_KEY not set — system cannot function!")
+        logger.error("❌ ANTHROPIC_API_KEY not set - system cannot function!")
     if not config.INSTANTLY_API_KEY:
-        logger.error("❌ INSTANTLY_API_KEY not set — cannot send replies!")
+        logger.error("❌ INSTANTLY_API_KEY not set - cannot send replies!")
 
     logger.info(f"Gleadsy Reply Agent paleistas (port 8000)")
     logger.info(f"Webhook endpoint: POST /webhook/instantly")
@@ -152,7 +152,7 @@ app = FastAPI(title="Gleadsy Reply Agent", lifespan=lifespan)
 def _verify_webhook_secret(request: Request):
     """Verify webhook request has valid secret token."""
     if not config.WEBHOOK_SECRET:
-        logger.warning("WEBHOOK_SECRET not set — webhook endpoint is unprotected!")
+        logger.warning("WEBHOOK_SECRET not set - webhook endpoint is unprotected!")
         return
     # Check header first, then query param
     token = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret")
@@ -163,14 +163,14 @@ def _verify_webhook_secret(request: Request):
 def _get_dashboard_session(request: Request) -> bool:
     """Check if user has valid dashboard session cookie."""
     if not config.DASHBOARD_PASSWORD:
-        return True  # No password set — open access
+        return True  # No password set - open access
     session = request.cookies.get("gleadsy_session")
     if not session or not secrets.compare_digest(session, _session_token):
         return False
     return True
 
 
-# Session token — generated on startup, lives in memory
+# Session token - generated on startup, lives in memory
 _session_token = secrets.token_urlsafe(32)
 
 
@@ -218,7 +218,7 @@ async def webhook_slack(request: Request):
 
 @app.get("/health")
 async def health():
-    """Enhanced health check — verifies DB connectivity and API key presence."""
+    """Enhanced health check - verifies DB connectivity and API key presence."""
     health_status = {
         "status": "ok",
         "clients": list(clients.keys()),
@@ -296,7 +296,7 @@ async def login_submit(request: Request):
         response = RedirectResponse(url="/replies", status_code=302)
         response.set_cookie("gleadsy_session", _session_token, httponly=True, samesite="lax", max_age=86400 * 7)
         return response
-    # Wrong password — show login with error
+    # Wrong password - show login with error
     html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Gleadsy - Login</title>
 <style>
@@ -369,8 +369,8 @@ async def replies_dashboard(request: Request):
     # Fetch rows
     cursor = await db.execute(
         f"SELECT id, created_at, client_id, lead_email, campaign_id, classification, confidence, "
-        f"prospect_message, agent_reply, was_sent, human_rating, quality_score, quality_summary, "
-        f"outcome "
+        f"classification_reasoning, prospect_message, agent_reply, was_sent, human_rating, "
+        f"quality_score, quality_summary, quality_issues, outcome "
         f"FROM interactions{where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
         params + [per_page, offset],
     )
@@ -414,7 +414,7 @@ async def replies_dashboard(request: Request):
         for c, n in sorted(cls_counts.items(), key=lambda x: -x[1])
     )
 
-    # Available clients for filter dropdown — merge DB clients with loaded YAML configs
+    # Available clients for filter dropdown - merge DB clients with loaded YAML configs
     cursor = await db.execute("SELECT DISTINCT client_id FROM interactions ORDER BY client_id")
     db_clients = [row["client_id"] for row in await cursor.fetchall()]
     available_clients = sorted(set(db_clients) | set(clients.keys()))
@@ -427,15 +427,28 @@ async def replies_dashboard(request: Request):
         reply = html_mod.escape(r.get("agent_reply") or "")
         classification = r.get("classification", "")
         confidence = r.get("confidence", 0)
+        cls_reasoning_raw = r.get("classification_reasoning") or ""
+        cls_reasoning = html_mod.escape(cls_reasoning_raw)
         quality_score = r.get("quality_score")
         quality_summary = html_mod.escape(r.get("quality_summary") or "")
+        # Issues list -> plaukstanti info
+        import json as _json_mod
+        q_issues_raw = r.get("quality_issues") or "[]"
+        try:
+            q_issues_list = _json_mod.loads(q_issues_raw) if q_issues_raw else []
+        except Exception:
+            q_issues_list = []
         rating = r.get("human_rating") or ""
         lead_email = html_mod.escape(r.get("lead_email", ""))
         campaign_id = r.get("campaign_id", "")
 
         cls_color = cls_colors_map.get(classification, "#333")
 
-        # Quality badge
+        # Classification badge - su tooltip'u kodel taip klasifikuota
+        cls_tooltip = f"Kodel: {cls_reasoning_raw} (conf: {confidence:.0%})" if cls_reasoning_raw else ""
+        cls_badge_html = f'<span class="badge" style="color:white;background:{cls_color}" title="{html_mod.escape(cls_tooltip)}">{classification}</span>'
+
+        # Quality badge - su tooltip'u kodel tiek
         if quality_score is not None:
             if quality_score >= 8:
                 q_color, q_bg = "#2e7d32", "#e8f5e9"
@@ -443,7 +456,14 @@ async def replies_dashboard(request: Request):
                 q_color, q_bg = "#e65100", "#fff3e0"
             else:
                 q_color, q_bg = "#c62828", "#ffebee"
-            quality_badge = f'<span class="badge" style="color:{q_color};background:{q_bg}" title="{quality_summary}">{quality_score}/10</span>'
+            # Detalesnis tooltip: summary + issues
+            q_tooltip_parts = []
+            if quality_summary:
+                q_tooltip_parts.append(f"Ivertis: {quality_summary}")
+            if q_issues_list:
+                q_tooltip_parts.append("Issues:\n- " + "\n- ".join(str(i) for i in q_issues_list))
+            q_tooltip = "\n\n".join(q_tooltip_parts) if q_tooltip_parts else ""
+            quality_badge = f'<span class="badge" style="color:{q_color};background:{q_bg};cursor:help" title="{html_mod.escape(q_tooltip)}">{quality_score}/10</span>'
         else:
             quality_badge = '<span class="badge" style="color:#999;background:#f5f5f5">-</span>'
 
@@ -476,7 +496,7 @@ async def replies_dashboard(request: Request):
             <td>{html_mod.escape(str(r.get('created_at','')))}</td>
             <td>{html_mod.escape(r.get('client_id',''))}</td>
             <td>{lead_link}</td>
-            <td><span class="badge" style="color:white;background:{cls_color}">{classification}</span></td>
+            <td>{cls_badge_html}</td>
             <td>{confidence:.0%}</td>
             <td>{quality_badge}</td>
             <td class="msg-col">{orig}</td>
@@ -623,8 +643,10 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
         return RedirectResponse(url="/login", status_code=302)
 
     cursor = await db.execute(
-        "SELECT id, created_at, classification, confidence, prospect_message, agent_reply, "
-        "was_sent, human_rating, quality_score, quality_summary, thread_position "
+        "SELECT id, created_at, classification, confidence, classification_reasoning, "
+        "prospect_message, agent_reply, was_sent, human_rating, "
+        "quality_score, quality_summary, quality_issues, improvement_suggestion, "
+        "few_shots_used, thread_position "
         "FROM interactions WHERE lead_email = ? AND campaign_id = ? ORDER BY created_at ASC",
         (lead_email, campaign_id),
     )
@@ -638,6 +660,8 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
         "REFERRAL": "#6a1b9a", "UNSUBSCRIBE": "#c62828", "OUT_OF_OFFICE": "#757575",
         "UNCERTAIN": "#f9a825", "API_ERROR": "#d32f2f",
     }
+
+    import json as json_mod
 
     messages_html = ""
     for r in rows:
@@ -655,27 +679,100 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
         elif rating == "thumbs_down":
             rating_icon = " &#128078;"
 
+        # Kodel taip ivertinta - sekcija paaiskinimui
+        cls_reasoning = html_mod.escape(r.get("classification_reasoning") or "")
+        q_summary = html_mod.escape(r.get("quality_summary") or "")
+        improvement = html_mod.escape(r.get("improvement_suggestion") or "")
+        q_issues_raw = r.get("quality_issues") or "[]"
+        try:
+            q_issues_list = json_mod.loads(q_issues_raw) if q_issues_raw else []
+        except Exception:
+            q_issues_list = []
+        q_issues_html = "".join(f"<li>{html_mod.escape(str(i))}</li>" for i in q_issues_list)
+
+        fs_raw = r.get("few_shots_used") or "[]"
+        try:
+            fs_list = json_mod.loads(fs_raw) if fs_raw else []
+        except Exception:
+            fs_list = []
+        fs_count = len(fs_list)
+
+        # Quality badge color
+        if quality_score is not None:
+            if quality_score >= 8:
+                q_badge_color, q_badge_bg = "#2e7d32", "#e8f5e9"
+            elif quality_score >= 6:
+                q_badge_color, q_badge_bg = "#f57c00", "#fff8e1"
+            else:
+                q_badge_color, q_badge_bg = "#c62828", "#ffebee"
+        else:
+            q_badge_color, q_badge_bg = "#999", "#f5f5f5"
+
         messages_html += f"""
         <div class="msg lead-msg">
             <div class="msg-header">
-                <strong>Lead</strong> — {html_mod.escape(str(r.get('created_at', '')))}
+                <strong>Lead</strong> - {html_mod.escape(str(r.get('created_at', '')))}
                 <span class="badge" style="color:white;background:{cls_color};margin-left:8px">{cls}</span>
                 <span style="color:#888;font-size:11px;margin-left:8px">{r.get('confidence',0):.0%}{q_text}</span>
             </div>
             <div class="msg-body">{prospect_msg}</div>
         </div>"""
         if agent_reply:
+            # Detali "Kodel taip ivertinta" sekcija
+            why_parts = []
+            if cls_reasoning:
+                why_parts.append(
+                    f'<div class="why-row"><span class="why-label">Kodel klasifikuota kaip {cls}:</span>'
+                    f'<span class="why-value">{cls_reasoning} <em>(conf: {r.get("confidence",0):.0%})</em></span></div>'
+                )
+            if quality_score is not None:
+                q_label = "Puiku" if quality_score >= 8 else ("Priimtina" if quality_score >= 6 else "Zema kokybe")
+                why_parts.append(
+                    f'<div class="why-row"><span class="why-label">Quality ivertis <span class="q-badge" style="color:{q_badge_color};background:{q_badge_bg}">{quality_score}/10 - {q_label}</span>:</span>'
+                    f'<span class="why-value">{q_summary or "(nera paaiskinimo)"}</span></div>'
+                )
+            if q_issues_list:
+                why_parts.append(
+                    f'<div class="why-row"><span class="why-label">Issues:</span>'
+                    f'<ul class="why-issues">{q_issues_html}</ul></div>'
+                )
+            if fs_count:
+                why_parts.append(
+                    f'<div class="why-row"><span class="why-label">Pavyzdziai (few-shots):</span>'
+                    f'<span class="why-value">{fs_count} istorini{"ai" if fs_count==1 else "u"} Pauliaus atsakymu panaudoti kaip kontekstas (IDs: {", ".join(str(x) for x in fs_list[:5])}{"..." if fs_count>5 else ""})</span></div>'
+                )
+            why_html = ""
+            if why_parts:
+                why_html = f'''
+            <details class="why-details">
+                <summary>Kodel taip ivertinta?</summary>
+                <div class="why-body">{"".join(why_parts)}</div>
+            </details>'''
+
+            # Prominent "Ka patobulinti" kortele - rodoma TIK jei yra pasiulymas (paprastai score < 8)
+            improve_html = ""
+            if improvement:
+                improve_html = f'''
+            <div class="improve-card">
+                <div class="improve-header">
+                    <span class="improve-icon">&#128161;</span>
+                    <strong>Ka patobulinti</strong>
+                </div>
+                <div class="improve-body">{improvement}</div>
+            </div>'''
+
             messages_html += f"""
         <div class="msg agent-msg">
             <div class="msg-header">
-                <strong>Agent</strong> — {sent_text}{rating_icon}
+                <strong>Agent</strong> - {sent_text}{rating_icon}
+                <span class="q-badge-inline" style="color:{q_badge_color};background:{q_badge_bg};margin-left:8px">{quality_score if quality_score is not None else "-"}/10</span>
             </div>
-            <div class="msg-body">{agent_reply}</div>
+            <div class="msg-body">{agent_reply}</div>{improve_html}{why_html}
         </div>"""
 
     safe_email = html_mod.escape(lead_email)
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Pokalbis — {safe_email}</title>
+<html><head><meta charset="utf-8"><title>Pokalbis - {safe_email}</title>
 <style>
 body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 20px; background: #f5f5f5; }}
 h2 {{ color: #333; }}
@@ -688,6 +785,24 @@ h2 {{ color: #333; }}
 .msg-header {{ font-size: 12px; color: #666; margin-bottom: 6px; }}
 .msg-body {{ white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.5; }}
 .summary {{ background: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); font-size: 13px; color: #555; }}
+.q-badge-inline {{ display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }}
+.q-badge {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
+.why-details {{ margin-top: 10px; padding: 10px 14px; background: rgba(0,0,0,0.03); border-radius: 6px; font-size: 12px; }}
+.why-details summary {{ cursor: pointer; color: #1565c0; font-weight: 600; user-select: none; }}
+.why-details summary:hover {{ color: #0d47a1; }}
+.why-details[open] summary {{ margin-bottom: 8px; }}
+.why-body {{ padding-top: 4px; }}
+.why-row {{ margin: 8px 0; padding: 6px 0; border-top: 1px solid rgba(0,0,0,0.05); }}
+.why-row:first-child {{ border-top: none; padding-top: 0; }}
+.why-label {{ display: block; font-weight: 600; color: #333; font-size: 11px; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }}
+.why-value {{ color: #555; line-height: 1.5; }}
+.why-value em {{ color: #888; font-style: normal; font-size: 10px; }}
+.why-issues {{ margin: 4px 0 0 0; padding-left: 18px; color: #c62828; }}
+.why-issues li {{ margin: 2px 0; }}
+.improve-card {{ margin-top: 10px; padding: 12px 14px; background: #fff8e1; border-left: 3px solid #f9a825; border-radius: 4px; font-size: 13px; }}
+.improve-header {{ display: flex; align-items: center; gap: 6px; color: #e65100; font-weight: 600; margin-bottom: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }}
+.improve-icon {{ font-size: 16px; }}
+.improve-body {{ color: #5d4037; line-height: 1.5; white-space: pre-wrap; }}
 </style></head><body>
 <a href="/replies" class="back">&larr; Grizti i dashboard</a>
 <h2>Pokalbis su {safe_email}</h2>
