@@ -64,6 +64,17 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_weekly_digest, "cron", day_of_week="mon", hour=9, args=[db], id="weekly_digest")
     scheduler.add_job(run_confidence_calibrator, "cron", day_of_week="sun", hour=23, args=[db], id="confidence_calibrator")
 
+    # Auto-learn: kas valandą traukia Pauliaus realius atsakymus iš Instantly ir
+    # saugo kaip few-shot pavyzdzius. Sistema mokosi is kiekvieno naujo atsakymo
+    # kol gal\u0117s 1:1 atkartoti Pauliaus stili\u0173.
+    async def run_auto_learn_job():
+        from core.auto_learn import run_auto_learn
+        try:
+            await run_auto_learn(db, clients)
+        except Exception as e:
+            logger.error(f"auto_learn job failed: {e}")
+    scheduler.add_job(run_auto_learn_job, "interval", hours=1, id="auto_learn")
+
     # Webhook-only mode. No polling - if Instantly webhook stops delivering,
     # webhook_silence_monitor below will page Slack.
 
@@ -328,6 +339,144 @@ async def logout():
     return response
 
 
+@app.get("/learning")
+async def learning_dashboard(request: Request):
+    """Mokymosi progresas + Pauliaus stiliaus profilis."""
+    from fastapi.responses import HTMLResponse
+    import html as html_mod_lp
+    from core.stylometry import analyze_paulius_style, learning_progress
+
+    if not _get_dashboard_session(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    style = await analyze_paulius_style(db)
+    progress = await learning_progress(db)
+
+    # Style sections
+    sign_offs_html = "".join(
+        f'<li><strong>{html_mod_lp.escape(k)}</strong>: {v}x</li>'
+        for k, v in (style.get("sign_offs") or {}).items()
+    ) or "<li>(dar nėra duomenų)</li>"
+
+    emojis_html = "".join(
+        f'<li><code>{html_mod_lp.escape(k)}</code>: {v}x</li>'
+        for k, v in (style.get("emojis") or {}).items()
+    ) or "<li>(nenaudoja)</li>"
+
+    first_phrases_html = "".join(
+        f'<li><em>„{html_mod_lp.escape(k)}…"</em>: {v}x</li>'
+        for k, v in (style.get("first_phrases") or {}).items()
+    ) or "<li>(įvairios)</li>"
+
+    weekly_rows = ""
+    for w in progress.get("weekly_trend", []):
+        avg = f"{w['avg_score']:.1f}" if w.get("avg_score") else "-"
+        thumbs_pct = ""
+        if w.get("total"):
+            rated = (w.get("thumbs_up") or 0) + (w.get("thumbs_down") or 0)
+            if rated:
+                up_pct = 100 * (w.get("thumbs_up") or 0) / rated
+                thumbs_pct = f"{up_pct:.0f}% 👍"
+        weekly_rows += f"""<tr>
+            <td>{w['week']}</td>
+            <td>{w['total']}</td>
+            <td><strong>{avg}</strong>/10</td>
+            <td>{thumbs_pct}</td>
+            <td>{w.get('meetings') or 0}</td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Mokymosi progresas</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; max-width: 1000px; margin: 30px auto; padding: 0 20px; background: #f5f5f5; color: #333; }}
+h1 {{ color: #1565c0; }}
+h2 {{ margin-top: 32px; color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 6px; }}
+.back {{ color: #4285f4; text-decoration: none; font-size: 14px; }}
+.stat-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }}
+.stat-card {{ background: white; padding: 18px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+.stat-card .number {{ font-size: 28px; font-weight: 700; color: #1565c0; }}
+.stat-card .label {{ font-size: 13px; color: #666; margin-top: 4px; }}
+.card {{ background: white; padding: 18px 22px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }}
+.card h3 {{ margin-top: 0; color: #333; font-size: 15px; }}
+.card ul {{ margin: 8px 0; padding-left: 20px; color: #555; font-size: 13px; line-height: 1.8; }}
+.grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+th {{ background: #1565c0; color: white; padding: 10px 14px; text-align: left; font-size: 13px; }}
+td {{ padding: 10px 14px; border-top: 1px solid #e0e0e0; font-size: 13px; }}
+.desc {{ color: #666; font-size: 13px; margin-bottom: 8px; }}
+code {{ background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 12px; }}
+</style></head><body>
+<a href="/replies" class="back">&larr; Grįžti į dashboard</a>
+<h1>🎓 Mokymosi progresas</h1>
+<p class="desc">Kaip agent'as mokosi iš Pauliaus realių atsakymų ir artėja prie 1:1 stiliaus atkartojimo.</p>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="number">{progress.get("few_shot_bank_size", 0)}</div>
+        <div class="label">Pauliaus pavyzdžių bankas (few-shots)</div>
+    </div>
+    <div class="stat-card">
+        <div class="number">{progress.get("total_overrides_from_paulius", 0)}</div>
+        <div class="label">Pauliaus perrašymų (mokymosi signalų)</div>
+    </div>
+    <div class="stat-card">
+        <div class="number">{style.get("total_samples", 0)}</div>
+        <div class="label">Stiliaus analyzės pavyzdžiai</div>
+    </div>
+    <div class="stat-card">
+        <div class="number">{style.get("avg_sentences", 0)}</div>
+        <div class="label">Vid. sakinių Pauliaus atsakyme</div>
+    </div>
+</div>
+
+<h2>📊 Savaitinė kokybės eiga</h2>
+<p class="desc">Jei score auga iš savaitės į savaitę - agent'as mokosi. Jei thumbs_up % kyla - artėja prie Pauliaus stiliaus.</p>
+<table>
+    <tr><th>Savaitė</th><th>Interakcijų</th><th>Vid. quality</th><th>Žmogaus įvertinimas</th><th>Susitikimų</th></tr>
+    {weekly_rows or '<tr><td colspan="5">(dar nėra duomenų)</td></tr>'}
+</table>
+
+<h2>✍️ Pauliaus stiliaus profilis</h2>
+<p class="desc">Ką agent'as išmoko apie Pauliaus rašymo stilių iš {style.get("total_samples",0)} pavyzdžių.</p>
+<div class="grid-2">
+    <div class="card">
+        <h3>Sign-off'ai</h3>
+        <ul>{sign_offs_html}</ul>
+    </div>
+    <div class="card">
+        <h3>Emoji naudojimas ({style.get("uses_emojis_pct", 0)}% atsakymų)</h3>
+        <ul>{emojis_html}</ul>
+    </div>
+    <div class="card">
+        <h3>Pradžios frazės</h3>
+        <ul>{first_phrases_html}</ul>
+    </div>
+    <div class="card">
+        <h3>Ilgio metrikos</h3>
+        <ul>
+            <li>Vidutinis: <strong>{style.get("avg_sentences", 0)}</strong> sakinių</li>
+            <li>Trumpiausias: {style.get("min_sentences", 0)} sakinių</li>
+            <li>Ilgiausias: {style.get("max_sentences", 0)} sakinių</li>
+        </ul>
+    </div>
+</div>
+
+<h2>🔄 Kaip sistema mokosi</h2>
+<div class="card">
+    <ul>
+        <li><strong>Auto-learn cron</strong> (kas 1h) - traukia naujus Pauliaus atsakymus iš Instantly → įrašo kaip <code>thumbs_up</code> few-shots.</li>
+        <li><strong>Perrašymų detekcija</strong> - jei Paulius rankomis perrašo agent'o draftą, tai žymima kaip <code>thumbs_down</code> + <code>human_override_text</code> (anti-pattern).</li>
+        <li><strong>Few-shot selection</strong> - prie kiekvienos naujos klasifikacijos parenkami top 3 Pauliaus pavyzdžiai pagal kategoriją → perduodami į LLM.</li>
+        <li><strong>Quality reviewer'is</strong> - automatiškai siūlo „Ką patobulinti" kiekvienam atsakymui su score &lt; 8.</li>
+        <li><strong>Confidence kalibracija</strong> (sekmadieniais 23:00) - pagal Pauliaus thumbs up/down kalibuoja klasifikavimo threshold.</li>
+    </ul>
+</div>
+
+<br><a href="/replies" class="back">&larr; Grįžti į dashboard</a>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
 @app.get("/replies")
 async def replies_dashboard(request: Request):
     """Web dashboard showing all replies from DB with rating buttons, stats, and filters."""
@@ -575,9 +724,12 @@ tr:hover {{ background: #f0f7ff; }}
 </style></head><body>
 <div class="header">
     <h1>Gleadsy Reply Agent</h1>
-    <form method="POST" action="/logout" style="margin:0">
-        <button type="submit" class="logout-btn">Atsijungti</button>
-    </form>
+    <div style="display:flex;gap:8px;align-items:center">
+        <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymosi progresas</a>
+        <form method="POST" action="/logout" style="margin:0">
+            <button type="submit" class="logout-btn">Atsijungti</button>
+        </form>
+    </div>
 </div>
 <p class="count">Auto-refresh kas 30s | {test_mode_label}</p>
 

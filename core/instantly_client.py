@@ -63,6 +63,58 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
     raise RuntimeError("send_reply: unexpected exit from retry loop")
 
 
+async def poll_sent_emails(since_timestamp: str) -> list[dict]:
+    """Poll Instantly for emails SENT by Paulius (human) since given timestamp.
+
+    Used by auto-learn loop: agent captures Paulius's real replies and uses them
+    as few-shot examples for future drafts. Skips auto-sent replies (agent's own).
+    Returns list with email_id, lead_email, subject, body_text, timestamp.
+    """
+    all_sent = []
+    starting_after = None
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            try:
+                params = {
+                    "workspace_id": config.INSTANTLY_WORKSPACE_ID,
+                    "timestamp_created_after": since_timestamp,
+                    "email_type": "sent",
+                    "limit": 100,
+                }
+                if starting_after:
+                    params["starting_after"] = starting_after
+                response = await client.get(f"{BASE_URL}/emails", params=params, headers=_headers())
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                logger.error(f"Instantly sent-email polling error: {e}")
+                break
+
+            items = data.get("items", data.get("data", []))
+            for email in items:
+                body = email.get("body", {})
+                body_text = body.get("text", "") if isinstance(body, dict) else str(body)
+                all_sent.append({
+                    "email_id": email.get("id", ""),
+                    "reply_to_uuid": email.get("reply_to_uuid", ""),  # parent email
+                    "lead_email": email.get("to_address_email_list", ""),
+                    "from_account": email.get("eaccount", ""),
+                    "campaign_id": email.get("campaign_id", ""),
+                    "subject": email.get("subject", ""),
+                    "body_text": body_text,
+                    "timestamp": email.get("timestamp_created", ""),
+                })
+
+            starting_after = data.get("next_starting_after")
+            if not starting_after or not items:
+                break
+
+    if all_sent:
+        logger.info(f"Polled {len(all_sent)} sent emails from Instantly")
+    return all_sent
+
+
 async def poll_for_replies(since_timestamp: str) -> list[dict]:
     """Poll Instantly for new replies since given timestamp. Returns webhook-compatible payloads.
     Handles pagination via next_starting_after cursor."""
