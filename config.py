@@ -61,3 +61,8 @@ GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
 # Test mode - logs replies to Google Sheets instead of sending via Instantly
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+
+# Auto-block: UNSUBSCRIBE klasifikacija -> Instantly blocklist + delete lead
+# SAFEGUARD: Tik jei confidence >= UNSUBSCRIBE_CONFIDENCE_MIN (default 0.85)
+AUTO_BLOCKLIST_UNSUBSCRIBE = os.getenv("AUTO_BLOCKLIST_UNSUBSCRIBE", "true").lower() == "true"
+UNSUBSCRIBE_CONFIDENCE_MIN = float(os.getenv("UNSUBSCRIBE_CONFIDENCE_MIN", "0.85"))

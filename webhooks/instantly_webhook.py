@@ -4,7 +4,7 @@ import logging
 from core.classifier import classify_reply, APIUnavailableError, reset_usage_context
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
-from core.instantly_client import send_reply
+from core.instantly_client import send_reply, add_to_blocklist, delete_lead_by_email
 from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error
 from core.self_improver import get_best_examples, get_anti_patterns
 from core.quality_reviewer import review_quality
@@ -160,21 +160,53 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 campaign_name=payload.get("campaign_name", ""), client_id=client_id,
                 lead_email=lead_email, company=payload.get("company_name", ""),
                 original_message=reply_text, classification="UNSUBSCRIBE",
-                confidence=classification.confidence, generated_reply="(unsubscribe - pašalintas)",
+                confidence=classification.confidence, generated_reply="(unsubscribe - pasalintas)",
                 sending_account=payload.get("email_account", ""), status="unsubscribed",
             )
         for prev in prev_interactions:
             if prev["outcome"] is None:
                 await update_outcome(db, prev["id"], "unsubscribed")
+
+        # AUTO DELETE + BLOCKLIST (safeguard: confidence threshold + ENV toggle)
+        auto_action_taken = False
+        auto_action_note = ""
+        if config.AUTO_BLOCKLIST_UNSUBSCRIBE and classification.confidence >= config.UNSUBSCRIBE_CONFIDENCE_MIN:
+            try:
+                bl_result = await add_to_blocklist(lead_email)
+                del_result = await delete_lead_by_email(lead_email, campaign_id)
+                auto_action_taken = True
+                auto_action_note = (
+                    f"blocklist={'ok' if bl_result.get('ok') else 'fail'}, "
+                    f"deleted={del_result.get('deleted', 0)} lead(s)"
+                )
+                logger.info(f"UNSUBSCRIBE auto-action for {lead_email}: {auto_action_note}")
+                try:
+                    await notify_escalation(
+                        lead_email, payload.get("campaign_name", ""),
+                        f"UNSUBSCRIBE auto-action: {auto_action_note}",
+                        reply_text,
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"UNSUBSCRIBE auto-action failed for {lead_email}: {e}")
+                auto_action_note = f"error: {e}"
+
         await log_interaction(db, {
             "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
             "lead_email": lead_email, "email_account": payload.get("email_account"),
             "email_id": email_id, "client_id": client_id,
             "prospect_message": reply_text, "classification": "UNSUBSCRIBE",
-            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "confidence": classification.confidence,
+            "classification_reasoning": (classification.reasoning or "") + (f" | auto-action: {auto_action_note}" if auto_action_note else ""),
             "was_sent": False, "thread_position": thread_position,
         })
-        return {"status": "logged", "reason": "unsubscribe"}
+        return {
+            "status": "logged",
+            "reason": "unsubscribe",
+            "auto_action": auto_action_taken,
+            "auto_action_note": auto_action_note,
+        }
 
     if classification.category == "OUT_OF_OFFICE":
         if config.TEST_MODE:
