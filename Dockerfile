@@ -17,6 +17,7 @@ COPY core/ core/
 COPY db/ db/
 COPY prompts/ prompts/
 COPY webhooks/ webhooks/
+COPY cron/ cron/
 COPY clients/ clients/
 
 # Data dir for SQLite (volume mount)

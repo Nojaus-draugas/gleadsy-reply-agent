@@ -14,7 +14,6 @@ _*.py
 _*.json
 _*.txt
 appscript/
-cron/
 docs/
 secrets/
 credentials.json
