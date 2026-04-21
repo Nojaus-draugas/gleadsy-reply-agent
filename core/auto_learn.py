@@ -106,8 +106,20 @@ async def run_auto_learn(conn: aiosqlite.Connection, clients: dict) -> dict:
             campaign_id = sent.get("campaign_id", "")
             body_text = _clean_quoted_history(sent.get("body_text", ""))
             reply_to_uuid = sent.get("reply_to_uuid", "")
+            subject = (sent.get("subject") or "").lower()
 
             if not lead_email or not body_text:
+                stats["skipped"] += 1
+                continue
+
+            # Filter: jei subject nepradeda "Re:" ar "RE:" - tai cold outreach/follow-up, ne reply
+            # Praleidžiam tokius - jie yra auto-generated cold email'ai, ne Pauliaus personalized reply'ai
+            if not subject.startswith("re:") and not subject.startswith("re :") and not subject.startswith("fwd:"):
+                stats["skipped"] += 1
+                continue
+
+            # Filter: labai trumpi atsakymai (< 20 char) - dažniausiai "Sveiki," ar confirmation
+            if len(body_text.strip()) < 20:
                 stats["skipped"] += 1
                 continue
 

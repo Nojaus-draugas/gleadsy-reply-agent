@@ -177,11 +177,22 @@ async def poll_sent_emails(since_timestamp: str) -> list[dict]:
             items = data.get("items", data.get("data", []))
             for email in items:
                 body = email.get("body", {})
-                body_text = body.get("text", "") if isinstance(body, dict) else str(body)
+                # Instantly V2 grąžina body kaip {"html": "..."} - extract text
+                import re
+                if isinstance(body, dict):
+                    body_text = body.get("text") or ""
+                    if not body_text and body.get("html"):
+                        body_text = re.sub(r"<br\s*/?>", "\n", body["html"], flags=re.IGNORECASE)
+                        body_text = re.sub(r"</?(div|p|h\d)[^>]*>", "\n", body_text, flags=re.IGNORECASE)
+                        body_text = re.sub(r"<[^>]+>", " ", body_text)
+                        body_text = re.sub(r"[ \t]+", " ", body_text)
+                        body_text = re.sub(r"\n\s*\n", "\n\n", body_text).strip()
+                else:
+                    body_text = str(body)
                 all_sent.append({
                     "email_id": email.get("id", ""),
                     "reply_to_uuid": email.get("reply_to_uuid", ""),  # parent email
-                    "lead_email": email.get("to_address_email_list", ""),
+                    "lead_email": email.get("lead") or email.get("to_address_email_list", ""),
                     "from_account": email.get("eaccount", ""),
                     "campaign_id": email.get("campaign_id", ""),
                     "subject": email.get("subject", ""),

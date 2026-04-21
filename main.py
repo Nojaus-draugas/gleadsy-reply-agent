@@ -64,16 +64,29 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_weekly_digest, "cron", day_of_week="mon", hour=9, args=[db], id="weekly_digest")
     scheduler.add_job(run_confidence_calibrator, "cron", day_of_week="sun", hour=23, args=[db], id="confidence_calibrator")
 
-    # Auto-learn: kas valandą traukia Pauliaus realius atsakymus iš Instantly ir
+    # Auto-learn: kas 15 min traukia Pauliaus realius atsakymus iš Instantly ir
     # saugo kaip few-shot pavyzdzius. Sistema mokosi is kiekvieno naujo atsakymo
-    # kol gal\u0117s 1:1 atkartoti Pauliaus stili\u0173.
+    # kol galės 1:1 atkartoti Pauliaus stilių.
+    # Boost: kol DB < 50 pavyzdžių, paleidžiam kas 15 min (greitesnis mokymasis).
     async def run_auto_learn_job():
         from core.auto_learn import run_auto_learn
         try:
             await run_auto_learn(db, clients)
         except Exception as e:
             logger.error(f"auto_learn job failed: {e}")
-    scheduler.add_job(run_auto_learn_job, "interval", hours=1, id="auto_learn")
+    auto_learn_interval = int(os.getenv("AUTO_LEARN_INTERVAL_MINUTES", "15"))
+    scheduler.add_job(run_auto_learn_job, "interval", minutes=auto_learn_interval, id="auto_learn")
+
+    # Learning digest - Slack 2x/dieną (08:00 ir 20:00 Europe/Vilnius)
+    async def run_learning_digest_job():
+        from cron.learning_digest import send_learning_digest
+        try:
+            stats = await send_learning_digest(db)
+            logger.info(f"learning_digest sent: {stats}")
+        except Exception as e:
+            logger.error(f"learning_digest failed: {e}")
+    scheduler.add_job(run_learning_digest_job, "cron", hour=8, minute=0, id="learning_digest_morning")
+    scheduler.add_job(run_learning_digest_job, "cron", hour=20, minute=0, id="learning_digest_evening")
 
     # Webhook-only mode. No polling - if Instantly webhook stops delivering,
     # webhook_silence_monitor below will page Slack.
