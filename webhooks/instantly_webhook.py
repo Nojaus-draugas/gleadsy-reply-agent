@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from core.classifier import classify_reply, APIUnavailableError, reset_usage_context
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
@@ -29,6 +30,56 @@ logger = logging.getLogger(__name__)
 # row isn't logged until the end. This in-memory set blocks concurrent
 # duplicates within the same process.
 _in_flight: set[str] = set()
+
+
+def _split_reply_and_history(reply_text: str) -> tuple[str, str]:
+    """Išskiria naują prospect'o žinutę ir thread istoriją iš Instantly payload'o.
+
+    Instantly siunčia reply_text su visu quote chain'u:
+      "Naujoji prospect žinutė\n\nOn DATE Paulius rašė:\n> originalus cold email..."
+
+    Grąžina (current_reply_only, thread_history_context).
+    Thread history įtraukia viską nuo pirmo quote marker'io.
+    """
+    if not reply_text:
+        return "", ""
+
+    lines = reply_text.split("\n")
+    split_idx = len(lines)
+
+    # Quote markers (LT, EN, FR)
+    patterns = [
+        re.compile(r"^\s*>"),  # > quoted
+        re.compile(r"^On\s+\w{3},?\s+\w+\s+\d+", re.I),  # "On Wed, Apr 22..."
+        re.compile(r"^\d{4}-\d{2}-\d{2}.+(rašė|wrote|écrit)\s*:", re.I),
+        re.compile(r"^Le\s+\d+\s+\w+", re.I),  # "Le 22 avril..."
+        re.compile(r"^(From|Nuo|De):\s", re.I),
+        re.compile(r"^-+\s*Original\s+[Mm]essage", re.I),
+        re.compile(r"^-+\s*Pirminis", re.I),
+        re.compile(r"^Sent from (my|an)\b", re.I),
+        re.compile(r"^Išsiųsta iš", re.I),
+        re.compile(r"^_{5,}"),  # ____________________
+    ]
+
+    for i, line in enumerate(lines):
+        for p in patterns:
+            if p.search(line):
+                split_idx = i
+                break
+        if split_idx < len(lines):
+            break
+
+    current = "\n".join(lines[:split_idx]).strip()
+    history_raw = "\n".join(lines[split_idx:]).strip()
+
+    if not history_raw:
+        return current, ""
+
+    # Suformuoti history kaip readable context (nereikia > simbolių)
+    hist_clean = re.sub(r"^\s*>\s?", "", history_raw, flags=re.MULTILINE)
+    hist_clean = re.sub(r"\n{3,}", "\n\n", hist_clean).strip()
+
+    return current, hist_clean
 
 
 async def handle_instantly_webhook(payload: dict, db, clients: dict, confidence_threshold: float) -> dict:
@@ -395,9 +446,12 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             return {"status": "waiting_for_human", "interaction_id": iid, "reason": "FAQ no match"}
 
     # 12. Generate reply
+    # Atskiriam naują prospect'o žinutę nuo thread history (cold email + ankstesnės žinutės).
+    # Taip LLM mato FULL kontekstą ir gali atpažinti "reply į CTA" scenarijus.
+    current_reply, thread_history = _split_reply_and_history(reply_text)
     try:
         agent_reply = await generate_reply(
-            prospect_message=reply_text,
+            prospect_message=current_reply or reply_text,  # fallback į full jei split'as nepavyko
             classification=classification.category,
             client_config=client_config,
             few_shots=few_shots,
@@ -405,6 +459,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             available_slots=available_slots,
             matching_faq=matching_faq,
             thread_position=thread_position,
+            thread_history=thread_history,
         )
     except APIUnavailableError as e:
         logger.error(f"Claude API unavailable during reply generation for {lead_email}: {e}")
