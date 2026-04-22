@@ -1,0 +1,19 @@
+services:
+  reply-agent:
+    build: .
+    container_name: gleadsy-reply-agent
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./clients:/app/clients:ro
+      - ./gdrive_sa_credentials.json:/app/gdrive_sa_credentials.json:ro
+    environment:
+      - DB_PATH=/app/data/agent.db
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
+    name: gleadsy-executive_web
