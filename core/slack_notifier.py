@@ -93,3 +93,53 @@ async def send_weekly_digest(stats: dict, week_start: str, week_end: str, confid
         f"🔧 Confidence threshold: {confidence_old} → {confidence_new}"
     )
     await _send(text)
+
+
+LANG_FLAGS = {
+    "lt": "🇱🇹", "en": "🇬🇧", "fr": "🇫🇷",
+    "de": "🇩🇪", "et": "🇪🇪", "lv": "🇱🇻",
+}
+
+
+def _approval_prefix(classification: str, quality_score: int | None) -> str:
+    if classification == "INTERESTED":
+        return "🔥"
+    if quality_score is not None and quality_score < 7:
+        return "⚠️"
+    return "⏳"
+
+
+def _preview(text: str, max_chars: int = 240) -> str:
+    text = (text or "").strip().replace("\n", " ")
+    if len(text) > max_chars:
+        return text[:max_chars].rstrip() + "..."
+    return text
+
+
+async def notify_approval_pending(
+    iid: int,
+    lead_email: str,
+    client_id: str,
+    classification: str,
+    quality_score: int | None,
+    confidence: float,
+    prospect_message_lt: str,
+    agent_reply_lt: str,
+    original_language: str,
+    dashboard_base_url: str,
+) -> None:
+    """Notify Paulius that a new foreign-language draft is waiting for approval."""
+    prefix = _approval_prefix(classification, quality_score)
+    flag = LANG_FLAGS.get(original_language.lower(), "")
+    quality_str = f"Quality: {quality_score}/10" if quality_score is not None else "Quality: -"
+    link = f"{dashboard_base_url.rstrip('/')}/pending#draft-{iid}"
+
+    text = (
+        f"{prefix} Naujas draftas laukia approval\n\n"
+        f"Klientas: {client_id}  |  Lead: {lead_email}  {flag} {original_language.upper()}\n"
+        f"Kategorija: {classification}  |  {quality_str}  |  Confidence: {confidence:.0%}\n\n"
+        f"🗣️ Lead žinutė (LT vertimas):\n> {_preview(prospect_message_lt, 300)}\n\n"
+        f"✍️ Agent'o draftas (LT preview):\n> {_preview(agent_reply_lt, 400)}\n\n"
+        f"👉 {link}"
+    )
+    await _send(text)
