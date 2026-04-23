@@ -75,6 +75,69 @@ async def send_reply(
     raise RuntimeError("send_reply: unexpected exit from retry loop")
 
 
+async def get_email_details(email_id: str) -> dict:
+    """Gauti pilna email objekta is Instantly (su attachments metadata).
+
+    Instantly webhook payload nekelia attachments lauko, todel reikia atskirai
+    pasiimti pilna email objekta kai gauname webhook'a. Naudojama check'inti
+    ar prospect'o reply turi prisegtu dokumentu (PDF / DOCX / Excel ir pan.).
+
+    Grazina:
+        {
+            "ok": True,
+            "id": "<uuid>",
+            "attachments": [{"name": "RFQ.pdf", "size": 123456, ...}, ...],
+            "attachment_count": 2,
+            "has_attachments": True,
+            "raw": {...}  # pilnas API response
+        }
+    Klaidos atveju: {"ok": False, "error": "...", "attachment_count": 0}
+    """
+    if not email_id:
+        return {"ok": False, "error": "empty email_id", "attachment_count": 0, "has_attachments": False}
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            response = await client.get(
+                f"{BASE_URL}/emails/{email_id}",
+                headers=_headers(),
+            )
+            if response.status_code != 200:
+                logger.warning(f"Instantly email fetch failed {response.status_code}: {response.text[:200]}")
+                return {"ok": False, "status": response.status_code,
+                        "error": response.text[:300], "attachment_count": 0,
+                        "has_attachments": False, "attachment_names": []}
+            data = response.json()
+        except Exception as e:
+            logger.error(f"Instantly email fetch exception for {email_id}: {e}")
+            return {"ok": False, "error": str(e), "attachment_count": 0,
+                    "has_attachments": False, "attachment_names": []}
+
+        # Instantly API v2 grazina attachments kaip list arba None. Saugom parse.
+        raw_atts = data.get("attachments") or data.get("email_attachments") or []
+        if not isinstance(raw_atts, list):
+            raw_atts = []
+
+        names = []
+        for a in raw_atts:
+            if isinstance(a, dict):
+                name = a.get("name") or a.get("filename") or a.get("file_name") or ""
+                if name:
+                    names.append(name)
+            elif isinstance(a, str):
+                names.append(a)
+
+        return {
+            "ok": True,
+            "id": data.get("id", email_id),
+            "attachment_count": len(names),
+            "has_attachments": len(names) > 0,
+            "attachment_names": names,
+            "subject": data.get("subject", ""),
+            "raw": data,
+        }
+
+
 async def add_to_blocklist(email_or_domain: str) -> dict:
     """Pridėti email (arba @domain) į Instantly globalų blocklist.
 

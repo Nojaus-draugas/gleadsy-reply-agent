@@ -97,6 +97,11 @@ MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_interactions_approval ON interactions(approval_status)",
     # 2026-04-23 - capture Instantly reply_subject for accurate approve thread subject
     "ALTER TABLE interactions ADD COLUMN reply_subject TEXT",
+    # 2026-04-23 - detect lead-attached documents (RFQ, specs, order forms etc.)
+    # Agent'as negali skaityti PDF/DOCX turinio, todel jei prospect'as atsiunte
+    # prieda - eskaluojam i Pauliu + skippinam auto-reply.
+    "ALTER TABLE interactions ADD COLUMN prospect_attachment_count INTEGER DEFAULT 0",
+    "ALTER TABLE interactions ADD COLUMN prospect_attachment_names TEXT",
 ]
 
 
@@ -196,8 +201,8 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
          quality_score, quality_issues, quality_summary, improvement_suggestion,
          tokens_in, tokens_out, tokens_cache_read, cost_usd,
          original_language, prospect_message_lt, agent_reply_lt, approval_status,
-         reply_subject)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         reply_subject, prospect_attachment_count, prospect_attachment_names)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["campaign_id"], data.get("campaign_name"), data["lead_email"],
             data.get("email_account"), data["email_id"], data["client_id"],
@@ -214,6 +219,8 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
             data.get("original_language"), data.get("prospect_message_lt"),
             data.get("agent_reply_lt"), data.get("approval_status"),
             data.get("reply_subject"),
+            data.get("prospect_attachment_count", 0),
+            data.get("prospect_attachment_names"),
         ),
     )
     await conn.commit()

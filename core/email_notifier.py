@@ -81,6 +81,53 @@ def notify_interested_email(lead_email: str, client_id: str, original_message: s
     send_email_notification(subject, body)
 
 
+def notify_lead_document_email(lead_email: str, client_id: str, campaign_name: str,
+                               subject: str, original_message: str,
+                               attachment_names: list[str]):
+    """Prospect'as atsiunte priedu - eskalacija Pauliui perziurai."""
+    subj = f"📎 Gleadsy: Lead atsiuntė dokumentą - {lead_email}"
+    names_html = "".join(f"<li><code>{n}</code></li>" for n in attachment_names[:10])
+    count_note = ""
+    if len(attachment_names) > 10:
+        count_note = f"<p style='color:#666'><em>Rodomi pirmi 10 iš {len(attachment_names)}</em></p>"
+    body = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 640px; margin: 0 auto;">
+        <div style="background: #e65100; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0;">📎 Lead atsiuntė dokumentą</h2>
+            <p style="margin: 5px 0 0 0; opacity: 0.9;">Auto-reply praleistas - reikia peržiūrėti rankomis</p>
+        </div>
+        <div style="background: #fff; padding: 20px; border: 1px solid #eee; border-top: none;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Lead:</td>
+                    <td style="padding: 8px;"><strong>{lead_email}</strong></td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Klientas:</td>
+                    <td style="padding: 8px;">{client_id}</td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Kampanija:</td>
+                    <td style="padding: 8px;">{campaign_name}</td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Subject:</td>
+                    <td style="padding: 8px;">{subject or '(nėra)'}</td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Priedų:</td>
+                    <td style="padding: 8px;"><strong>{len(attachment_names)}</strong></td></tr>
+            </table>
+            <h3 style="color: #e65100; margin-top: 20px;">Priedų sąrašas:</h3>
+            <ul style="background: #fff3e0; padding: 15px 15px 15px 35px; border-radius: 8px; border-left: 4px solid #e65100;">{names_html}</ul>
+            {count_note}
+            <h3 style="color: #333; margin-top: 20px;">Lead žinutė (teksto dalis):</h3>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #666; white-space: pre-wrap;">{original_message}</div>
+            <div style="margin-top: 25px; padding: 15px; background: #fff3e0; border-radius: 8px;">
+                <strong>⚠️ AUTO-REPLY NEBUVO SIŲSTAS</strong><br>
+                Dokumentų turinys (RFQ specifikacija, užsakymo forma, brėžiniai ir pan.) gali būti kritinis - agent'as negali jų perskaityti, todėl eskaluoja tau.<br>
+                Atidaryk Instantly unibox, atsisiųsk priedus, peržiūrėk ir atsakyk rankomis.
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <a href="https://app.instantly.ai/app/unibox" style="display: inline-block; padding: 14px 28px; background: #e65100; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Atidaryti Instantly unibox</a>
+            </div>
+        </div>
+    </div>
+    """
+    send_email_notification(subj, body)
+
+
 def notify_order_placed_email(lead_email: str, client_id: str, campaign_name: str,
                               original_message: str, generated_reply: str, confidence: float,
                               interaction_id: int | None = None):

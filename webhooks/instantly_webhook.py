@@ -5,8 +5,8 @@ import re
 from core.classifier import classify_reply, APIUnavailableError, reset_usage_context
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
-from core.instantly_client import send_reply, add_to_blocklist, delete_lead_by_email
-from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error, notify_approval_pending, notify_order_placed
+from core.instantly_client import send_reply, add_to_blocklist, delete_lead_by_email, get_email_details
+from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error, notify_approval_pending, notify_order_placed, notify_lead_document
 from core.self_improver import get_best_examples, get_anti_patterns
 from core.quality_reviewer import review_quality
 from core.hallucination_guard import check_reply as check_hallucinations
@@ -23,7 +23,7 @@ import config
 
 if config.TEST_MODE:
     from core.sheets_logger import log_test_reply
-from core.email_notifier import notify_escalation_email, notify_interested_email, notify_order_placed_email
+from core.email_notifier import notify_escalation_email, notify_interested_email, notify_order_placed_email, notify_lead_document_email
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,70 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         last = prev_interactions[-1]
         if last["outcome"] is None and last["was_sent"]:
             await update_outcome(db, last["id"], "replied_again")
+
+    # 7b. Lead attached document check (Instantly webhook nekelia attachments metadata,
+    # todel darom vienkartini GET /emails/{id} fetch'a). Jei yra priedu - agent'as
+    # negali perskaityti turinio (PDF/DOCX), todel eskaluoja Pauliui rankiniam
+    # peziurui ir SKIP'ina auto-reply. Fail-open: jei API klaida - tesiam iprasta flow.
+    prospect_attachment_count = 0
+    prospect_attachment_names: list[str] = []
+    if email_id and config.ENABLE_LEAD_DOCUMENT_ESCALATION:
+        try:
+            details = await get_email_details(email_id)
+            if details.get("ok") and details.get("has_attachments"):
+                prospect_attachment_count = details.get("attachment_count", 0)
+                prospect_attachment_names = details.get("attachment_names", [])
+                logger.info(
+                    f"Lead {lead_email} atsiuntė {prospect_attachment_count} priedą(-us): "
+                    f"{prospect_attachment_names}"
+                )
+                # Skip classify + reply, eskaluojam
+                try:
+                    await notify_lead_document(
+                        lead_email=lead_email,
+                        campaign_name=payload.get("campaign_name", ""),
+                        client_id=client_id,
+                        prospect_text=reply_text,
+                        attachment_names=prospect_attachment_names,
+                        subject=details.get("subject") or payload.get("reply_subject", ""),
+                        dashboard_base_url=config.DASHBOARD_BASE_URL,
+                    )
+                except Exception as e:
+                    logger.error(f"notify_lead_document (slack) failed: {e}")
+                try:
+                    notify_lead_document_email(
+                        lead_email=lead_email,
+                        client_id=client_id,
+                        campaign_name=payload.get("campaign_name", ""),
+                        subject=details.get("subject") or payload.get("reply_subject", ""),
+                        original_message=reply_text,
+                        attachment_names=prospect_attachment_names,
+                    )
+                except Exception as e:
+                    logger.error(f"notify_lead_document_email failed: {e}")
+
+                await log_interaction(db, {
+                    "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+                    "lead_email": lead_email, "email_account": payload.get("email_account"),
+                    "email_id": email_id, "client_id": client_id,
+                    "prospect_message": reply_text,
+                    "classification": "LEAD_SENT_DOCUMENT",
+                    "confidence": 1.0,
+                    "classification_reasoning": f"Lead'as atsiuntė {prospect_attachment_count} priedą(-us), auto-reply praleistas",
+                    "was_sent": False, "thread_position": thread_position,
+                    "reply_subject": payload.get("reply_subject", ""),
+                    "prospect_attachment_count": prospect_attachment_count,
+                    "prospect_attachment_names": json.dumps(prospect_attachment_names, ensure_ascii=False),
+                })
+                return {
+                    "status": "escalated",
+                    "reason": "lead_sent_document",
+                    "attachment_count": prospect_attachment_count,
+                    "attachment_names": prospect_attachment_names,
+                }
+        except Exception as e:
+            # Fail-open: jei Instantly API neatsake, nesustabdom reply flow
+            logger.warning(f"Lead attachment enrichment failed for {email_id}: {e}")
 
     # 8. Classify
     campaign_context = client_config.get("client_name", "") or payload.get("campaign_name", "")

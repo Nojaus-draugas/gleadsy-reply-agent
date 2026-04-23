@@ -639,6 +639,10 @@ button:disabled {{ background: #999; }}
     <label>Thread istorija (neprivaloma, bet naudinga)</label>
     <textarea id="history" placeholder="[Paulius cold email]: Sveiki, gaminame I-sijas... Ar domintų plačiau?"></textarea>
 
+    <label style="margin-top:12px">Simuliuoti prospect'o priedą (tam, kad matytum eskalaciją)</label>
+    <input id="sim_attachments" type="text" placeholder="tušč. = be priedų | pvz: RFQ.pdf, specs.docx" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    <div class="hint">Jei čia įrašysi failo vardą - simuliuosiu, kad lead'as atsiuntė PDF/DOCX, ir pamatysi LEAD_SENT_DOCUMENT crit notifikaciją.</div>
+
     <div class="examples" style="margin-top: 12px">
         <strong style="font-size: 12px; color: #555">Pavyzdžiai:</strong><br>
         <button onclick="preset('ibjoist',2,'Sveiki. Taip domina. Kainos terminai ir pristatymas','')">Skardesta (QUESTION kaina)</button>
@@ -649,6 +653,8 @@ button:disabled {{ background: #999; }}
         <button onclick="preset('ibjoist',3,'Gerai, paimu 500 sijų I-300. Siųskite sąskaitą info@imone.lt','')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 LT Užsakymas</button>
         <button onclick="preset('ibjoist',3,&quot;We'll take 200 units of I-300. Please send invoice.&quot;,'')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 EN Order</button>
         <button onclick="preset('puoskio-spauda',3,'Ok, darom. Užsakau 300 marškinėlių. Sąskaitą į buhalterija@imone.lt','')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 Puoškio order</button>
+        <button onclick="presetWithAtts('ibjoist',2,'Sveiki, prisegu mūsų projekto specifikaciją - tikimės kainų iki savaitės pabaigos.','','RFQ_statyba.pdf, brežinys.dwg')" style="background:#fff3e0;color:#e65100;font-weight:600">📎 Lead su PDF priedu</button>
+        <button onclick="presetWithAtts('gleadsy',2,'Hi, please see attached our RFP for outreach services.','','RFP_outreach_2026.pdf')" style="background:#fff3e0;color:#e65100;font-weight:600">📎 EN RFP attached</button>
     </div>
 
     <button onclick="run()">▶ Generuoti draft'ą</button>
@@ -662,6 +668,11 @@ function preset(c, t, p, h) {{
     document.getElementById('tpos').value = t;
     document.getElementById('prospect').value = p;
     document.getElementById('history').value = h;
+    document.getElementById('sim_attachments').value = '';
+}}
+function presetWithAtts(c, t, p, h, atts) {{
+    preset(c, t, p, h);
+    document.getElementById('sim_attachments').value = atts;
 }}
 async function run() {{
     const btn = event.target; btn.disabled = true; btn.textContent = 'Generuoju...';
@@ -674,6 +685,7 @@ async function run() {{
                 thread_position: parseInt(document.getElementById('tpos').value),
                 prospect: document.getElementById('prospect').value,
                 thread_history: document.getElementById('history').value,
+                simulated_attachments: (document.getElementById('sim_attachments').value || '').split(',').map(s => s.trim()).filter(Boolean),
             }})
         }});
         const d = await res.json();
@@ -731,6 +743,8 @@ async def playground_api(request: Request):
     thread_position = int(body.get("thread_position", 1))
     prospect = body.get("prospect", "").strip()
     thread_history = body.get("thread_history", "").strip()
+    # Playground: simuliuok, kad prospect'as atsiunte priedu (PDF/DOCX)
+    simulated_attachments = body.get("simulated_attachments") or []
 
     if not prospect:
         return JSONResponse({"error": "prospect message is empty"})
@@ -779,6 +793,16 @@ async def playground_api(request: Request):
     # Simuliuoju kokios notifikacijos triggerint\u0173si si scenarijui
     notifications = []
     conf_threshold = config.CONFIDENCE_THRESHOLD
+
+    # -1. LEAD_SENT_DOCUMENT - auto-reply praleistas, eskaluojama Pauliui
+    # (simuliuojama per simulated_attachments lauka is playground UI)
+    if simulated_attachments:
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "crit",
+            "event": "📎 Lead atsiunte dokumenta",
+            "detail": f"Priedai: {', '.join(simulated_attachments[:5])}. Auto-reply PRALEISTAS - agent'as neskaito PDF/DOCX turinio, todel eskaluoja tau perziurai per Instantly unibox. Draft'as NESIUNCIAMAS.",
+        })
 
     # 0. ORDER_PLACED - KRITINE notifikacija (slack+email crit, auto-send blocked)
     if cls.category == "ORDER_PLACED":

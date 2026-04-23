@@ -66,6 +66,33 @@ async def notify_meeting_booked(lead_email: str, campaign_name: str, time_str: s
     await _send(f"📅 Susitikimas suplanuotas! | {lead_email} | {campaign_name} | Laikas: {time_str}")
 
 
+async def notify_lead_document(
+    lead_email: str,
+    campaign_name: str,
+    client_id: str,
+    prospect_text: str,
+    attachment_names: list[str],
+    subject: str = "",
+    dashboard_base_url: str = "",
+):
+    """Prospect'as atsiunte priedu (PDF/DOCX/Excel). Neatsakinejame automatiskai,
+    Paulius turi peziureti per Instantly unibox rankomis.
+    """
+    names_str = ", ".join(attachment_names[:5])
+    if len(attachment_names) > 5:
+        names_str += f" (+{len(attachment_names) - 5} more)"
+    link = f"\n👉 {dashboard_base_url.rstrip('/')}/replies" if dashboard_base_url else ""
+    subj = f" | Subject: {subject[:60]}" if subject else ""
+    await _send(
+        f"📎 LEAD atsiunte dokumenta ({len(attachment_names)} vnt.) | {lead_email} | "
+        f"{client_id} | {campaign_name}{subj}\n"
+        f"Priedai: {names_str}\n"
+        f"> {_preview(prospect_text, 300)}\n"
+        f"⚠️ AUTO-REPLY PRALEISTAS - atidaryk Instantly unibox, atsisiusk priedus, "
+        f"atsakyk rankomis (kontekstas yra dokumente, ne tekste){link}"
+    )
+
+
 async def notify_order_placed(
     lead_email: str,
     campaign_name: str,

@@ -68,3 +68,8 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 # SAFEGUARD: Tik jei confidence >= UNSUBSCRIBE_CONFIDENCE_MIN (default 0.85)
 AUTO_BLOCKLIST_UNSUBSCRIBE = os.getenv("AUTO_BLOCKLIST_UNSUBSCRIBE", "true").lower() == "true"
 UNSUBSCRIBE_CONFIDENCE_MIN = float(os.getenv("UNSUBSCRIBE_CONFIDENCE_MIN", "0.85"))
+
+# Lead attachment escalation: kai prospect'o reply turi prisegtu dokumentu (PDF, DOCX, Excel).
+# Agent'as negali perskaityti turinio, todel eskaluoja Pauliui + skippina auto-reply.
+# Itraukia vienkartini GET /api/v2/emails/{id} Instantly API call'a per webhook (cheap).
+ENABLE_LEAD_DOCUMENT_ESCALATION = os.getenv("ENABLE_LEAD_DOCUMENT_ESCALATION", "true").lower() == "true"
