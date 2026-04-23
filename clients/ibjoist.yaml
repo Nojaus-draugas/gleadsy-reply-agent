@@ -5,7 +5,9 @@ client_name: "IBJOIST"
 campaigns:
   - "c7d5396f-197f-446f-a344-913217401e23"   # IBjoist - stogdengiai (UK, active)
   - "b16aea0f-2dce-42f0-8ba3-013a1181bdef"   # IBjoist - kitos statybos veiklos (UK, active)
-  - "f496aa52-713f-44b0-b19e-e65ca9b6c1f7"   # IBJOIST v2 - Ossature Bois France (FR, active)
+  - "f496aa52-713f-44b0-b19e-e65ca9b6c1f7"   # IBJOIST - Ossature Bois France (FR, v1 paused)
+  - "efb82f7e-bb5d-40c7-9faf-1f24cd587d2a"   # IBJOIST v2 - Ossature Bois France (FR, active)
+  - "cbdc07a6-2e7e-4b44-998b-54c9ed076884"   # IBJOIST - Ossature Bois FR (Pharow v1, draft)
   - "ae03a523-2295-4baf-8511-acba91cc7f08"   # IBJOIST v2 CCMI - Constructeurs France (FR, draft, 535 leads)
 
 company_description: |

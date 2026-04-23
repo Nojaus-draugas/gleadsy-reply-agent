@@ -1,0 +1,68 @@
+# gleadsy-reply-agent/clients/botis.yaml
+# KONFIDENCIALUS KLIENTAS - nevardinti "Botis" per įmonės vardą.
+# Gleadsy daro outreach jiems (kompensacija 10% monthly recurring).
+
+client_id: "botis"
+client_name: "Price tracking / data scraping paslaugos"  # konfidenciali pavadinimas
+
+campaigns:
+  - "7f513ac5-4d28-4ac5-9a41-ae6a8ef655ca"   # BOTIS_A_BusinessVoice (active)
+  - "7d3cd64f-6534-4b03-9e32-6d90b372a9ab"   # BOTIS_B_MarketingVoice (active)
+
+company_description: |
+  TODO (Paulius): užpildyk, kaip Botis save pozicionuoja prospect'ams.
+  Bazinė info: price tracking / data scraping (eBay, Amazon, Walmart) Baltic e-commerce.
+
+service_offering: |
+  TODO: pilna paslauga su konkrečiais duomenimis (pvz. "trackinam X produktų per dieną",
+  "rezultatai per Y valandų", integracijos ir t.t.).
+
+value_proposition: |
+  TODO: kokia pagrindinė value prop'ė Baltic e-com? Konkurentų kainos? Stock monitoring?
+
+pricing: |
+  TODO: kainodaros range ar konkretūs planai. Jei neaišku - sakyk "aptariame per pokalbį".
+
+target_audience: |
+  Baltic (LT, LV, EE) e-commerce įmonių CEO/Founder (Angle A) ir
+  Marketing/E-commerce Manager (Angle B).
+
+meeting:
+  participant_from_client: "Paulius (atstovauja Botis)"
+  purpose: "Aptarti kaip price tracking gali padėti jūsų e-com"
+  duration_minutes: 20
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+faq:
+  - question: "Ką konkrečiai trackinate?"
+    answer: |
+      TODO: detalus atsakymas apie tracking'ą.
+  - question: "Kiek kainuoja?"
+    answer: |
+      TODO: kainodaros info arba pasiūlymas aptarti per pokalbį.
+
+boundaries:
+  cannot_promise:
+    - "Konkrečių kainų be pokalbio"
+    - "Tikslaus tracking frequency be setup'o"
+  escalate_topics:
+    - "Teisiniai klausimai (ToS)"
+    - "Techniniai integracijos klausimai"
+
+tone:
+  formality: "semi-formal"
+  addressing: "Jūs"
+  language: "auto"  # LT dominuoja Baltic rinkoje, bet EN taip pat
+  personality: |
+    Tiesiogus, techniškai kompetentingas. Kalba e-com vadovų kalba -
+    apie konkursas, kainų monitoring'ą, stock levels.
+  max_reply_length_sentences: 5
+  sign_off: "Linkėjimai"
+  sender_name: "Paulius"

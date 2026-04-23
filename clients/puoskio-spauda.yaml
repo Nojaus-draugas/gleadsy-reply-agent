@@ -9,21 +9,90 @@ client_name: "Puoškio Spauda"
 campaigns:
   # Originali kampanija (šokių studijos + sporto salės)
   - "ec8d8f52-5d91-400c-9d75-673431fc6b47"
-  # TODO: po Instantly kampanijų sukūrimo pridėti 4 naujus ID:
-  # - "XXXX-MOKYKLOS-CAMPAIGN-ID"
-  # - "XXXX-STOVYKLOS-CAMPAIGN-ID"
-  # - "XXXX-SPORTAS-CAMPAIGN-ID"
-  # - "XXXX-RENGINIAI-CAMPAIGN-ID"
+  # 2026-04 Puoškio 4 segmentai (outreach_campaigns_2026_04):
+  - "aadefe03-6402-46b8-846c-116f34affa19"  # Mokyklos
+  - "d7d0fc90-fc81-48c4-ad70-fa335d1d357b"  # Stovyklos
+  - "e955d79d-6ad5-4a56-ad30-5fc55f6c9145"  # Sportas
+  - "58c41e1e-7622-4fff-9b55-a5eb80e89b0b"  # Renginiai
+
+# Cold outreach kampanijos metadata - reply agent naudoja šią info, kad suprastų,
+# į kokį laišką klientas atsako (step 1 personalized vs step 2/3 follow-up).
+outreach_campaigns_2026_04:
+  created: "2026-04-22"
+  status: "paused"  # po konfigūracijos, Paulius paleis kai bus pasiruošęs
+  total_leads: 592  # wave 1; dar 12 wave 2 po 7 d.
+  segments:
+    Mokyklos:
+      campaign_id: "aadefe03-6402-46b8-846c-116f34affa19"
+      wave1_leads: 78
+      wave2_leads: 0
+    Stovyklos:
+      campaign_id: "d7d0fc90-fc81-48c4-ad70-fa335d1d357b"
+      wave1_leads: 57
+      wave2_leads: 3
+    Sportas:
+      campaign_id: "e955d79d-6ad5-4a56-ad30-5fc55f6c9145"
+      wave1_leads: 242
+      wave2_leads: 5
+    Renginiai:
+      campaign_id: "58c41e1e-7622-4fff-9b55-a5eb80e89b0b"
+      wave1_leads: 215
+      wave2_leads: 4
+
+  schedule:
+    days: "Mon-Fri"
+    hours: "10:00-18:00"
+    timezone: "Europe/Vilnius"  # Instantly API priima kaip Europe/Helsinki (toks pats UTC offset)
+  sending_accounts: 42  # visi aktyvūs Pauliaus domain'ai (thisemailmattrs, readthisemal ir kt.)
+
+  sequence:
+    step_1:
+      delay_days: 0
+      subject_template: "{{subject_line}}"  # unikalus kiekvienam leadui (iš custom_variables)
+      body_template: "{{email_body}}"       # unikalus kiekvienam leadui (iš custom_variables)
+      notes: "Personalizuotas laiškas, paremtas Apollo + website scrape + Claude generated icebreaker."
+
+    step_2:
+      delay_days: 3  # po Step 1
+      subject: ""    # tuščias - Instantly atsakys į tą patį thread'ą
+      body_html: |
+        <p>Sveiki,</p>
+
+        <p>Bandau dar kartą - praeitą savaitę rašiau apie DTF spaudą ant marškinėlių, polo ar džemperių su jūsų logotipu. Gal laiškas kažkur pasimetė?</p>
+
+        <p>Jei Jūsų komandai nebūtų aktualu - tiesiog parašykit, nespausiu. O jei tiktų - atsakykit su kiekiu ir produktu, paruošiu konkretų pasiūlymą.</p>
+
+        <p>Linkėjimai,<br>Paulius, Puoškio Spauda</p>
+
+    step_3:
+      delay_days: 3  # po Step 2 (= 6 d. po Step 1)
+      subject: ""
+      body_html: |
+        <p>Sveiki,</p>
+
+        <p>Galvojau jau neberašyti, nes neatsakėte, bet gal netyčia kažkaip pasimiršo - tad bandau paskutinį kartą.</p>
+
+        <p>Jei DTF spauda ant marškinėlių, polo ar džemperių šiuo metu nėra aktualu - viskas gerai, daugiau netrukdysiu. O jei iš tikrųjų tik praleidote laišką ir norėtumėt pažiūrėti - tiesiog atsakykite, paruošiu konkretų pasiūlymą pagal jūsų kiekį.</p>
+
+        <p>Linkėjimai,<br>Paulius, Puoškio Spauda</p>
+
+        <p>P.S. Darbų pavyzdžių: puoskislietuviskai.lt</p>
+
+  reply_agent_hint: |
+    Cold outreach laiškuose NENAUDOJAM žodžio "hoodie" (Pauliaus preferencija) - vartojam
+    "džemperis" (bendrai) arba "džemperis su gobtuvu" / "džemperis be gobtuvo" kai reikia
+    diferenciacijos. Reply agentui šioje YAML - tas pats: neminėk "hoodie", naudok lietuviškus
+    ekvivalentus. Pricing tier FAQ turi kainą skirtingiems produktams.
 
 company_description: |
   Puoškio Spauda - lietuviška tekstilės spausdinimo įmonė. Specializuojamės DTF
-  spaudoje ant marškinėlių, džemperių, hoodie'ų ir kitos tekstilės - su logotipu,
+  spaudoje ant marškinėlių, džemperių (su gobtuvu ir be) ir kitos tekstilės - su logotipu,
   dizainu ar individualiu sprendimu. Dirbame su mokyklomis, stovyklomis, sporto
   klubais, renginių organizatoriais ir kitais kolektyvais visoje Lietuvoje.
   Paulius - įkūrėjas, tiesiogiai bendrauja su klientais.
 
 service_offering: |
-  DTF spauda ant tekstilės: marškinėliai, džemperiai, hoodie'ai, polo.
+  DTF spauda ant tekstilės: marškinėliai, džemperiai, polo.
   Nuo dizaino paruošimo spaudai iki gatavo produkto - viskas vienoje vietoje.
   Dizainą (logotipą ar pan.) klientas atsiunčia pats; mes paruošiame spaudai
   ir perkeliame ant tekstilės. Siuntimas - per Omniva į visą Lietuvą.
@@ -56,7 +125,7 @@ product_specs: |
 
 value_proposition: |
   Drabužiai su logotipu ar dizainu - tai, kas jungia grupę ir lieka kaip
-  atsiminimas. Ar tai klasės hoodie, stovyklos marškinėliai dalyviams,
+  atsiminimas. Ar tai klasės džemperiai su gobtuvu, stovyklos marškinėliai dalyviams,
   klubo merch nariams, ar renginio dalyvio atributika - procesas tas pats:
   greitas terminas (7-10 d.d.), mažas minimumas (nuo 10 vnt.) ir kokybiška
   DTF spauda, kuri išlaiko daug skalbimų.
@@ -93,7 +162,7 @@ pricing: |
     31-50 vnt.  - 16,00 € + PVM / vnt.
     100+ vnt.   - 14,50 € + PVM / vnt.
 
-  PREMIUM DŽEMPERIAI SU GOBTUVU (hoodie'ai) su spauda:
+  PREMIUM DŽEMPERIAI SU GOBTUVU su spauda:
     1-4 vnt.    - taikoma minimali projekto suma 50,00 € + PVM
     5-9 vnt.    - 27,00 € + PVM / vnt.
     10-20 vnt.  - 24,00 € + PVM / vnt.
@@ -107,8 +176,8 @@ pricing: |
 
 target_audience: |
   Grupės ir kolektyvai, kurie nori drabužių su logotipu ar dizainu:
-    • Mokyklos - klasės merch, abiturientų hoodie, būrelių komplektai, ekskursijų marškinėliai
-    • Stovyklos - dalyvių marškinėliai ir hoodie'ai, vadovų komplektai, sezoniniai dizainai
+    • Mokyklos - klasės merch, abiturientų džemperiai su gobtuvu, būrelių komplektai, ekskursijų marškinėliai
+    • Stovyklos - dalyvių marškinėliai ir džemperiai, vadovų komplektai, sezoniniai dizainai
     • Sporto klubai - nariams, treniruočių merch, komandų identitetas
     • Renginių organizatoriai - dalyvių merch, staff uniformos, festivalių/konferencijų atributika
 
@@ -130,7 +199,7 @@ faq:
     answer: |
       Kaina priklauso nuo medžiagos kokybės ir spaudos. Turime kelis variantus -
       pateik klientui preliminarų pasiūlymą iš `pricing` sekcijos pagal produktą,
-      kurio jis klausia (polo, marškinėliai, džemperiai, hoodie'ai), ir PABRĖŽK,
+      kurio jis klausia (polo, marškinėliai, džemperiai be gobtuvo, džemperiai su gobtuvu), ir PABRĖŽK,
       kad kainos PRELIMINARIOS. Tikslų pasiūlymą paruošiame sužinoję konkretų
       kiekį, dizainą ir medžiagos pasirinkimą.
 
@@ -234,7 +303,7 @@ discovery_questions: |
     1. KIEKIS - "Apytiksliai kiek vienetų galvojate?"
        (Tai leis duoti teisingą kainų tier'ą iš pricing sekcijos.)
 
-    2. PRODUKTO TIPAS - "Marškinėliai, polo, hoodie'ai ar džemperiai?"
+    2. PRODUKTO TIPAS - "Marškinėliai, polo, džemperiai su gobtuvu ar be gobtuvo?"
        (Jei klientas nepasakė - tai svarbu kainai ir pristatymui.)
 
     3. DIZAINAS - "Ar turite logotipą/dizainą, kurį atsiųstumėt? Jei ne -
@@ -265,8 +334,7 @@ common_objections: |
       dažnai konkurentai pigesni, nes naudoja lankstinę/siete spaudą, kuri
       nuplyša po kelių skalbimų.
     - Jei realiai per brangu jų biudžetui - pasiūlyk pigesnį produkto
-      variantą (standartinius marškinėlius vietoj polo, sweatshirt vietoj
-      hoodie).
+      variantą (standartinius marškinėlius vietoj polo, džemperis be gobtuvo vietoj džemperio su gobtuvu).
 
   "REIKIA LABAI SKUBIAI (3-5 DIENOS)":
     - Aiškiai pasakyk: "Standartas 7-10 d.d. Skubiam užsakymui galim

@@ -1,0 +1,65 @@
+# gleadsy-reply-agent/clients/kozero.yaml
+# KOZERO - DE rinka (Vokietija), DRAFT status (dar neparleistas Instantly).
+
+client_id: "kozero"
+client_name: "Kozero"
+
+campaigns:
+  - "23fc2e06-eff7-4383-a761-c3aa80e22d4d"   # KOZERO_DE_Spring2026 (draft)
+
+company_description: |
+  TODO (Paulius): Kozero įmonės aprašymas. Kokia paslauga / produktas?
+  DE rinka - reiškia tikslinis auditorijos kalba vokiečių.
+
+service_offering: |
+  TODO: paslaugos detalizavimas.
+
+value_proposition: |
+  TODO: pagrindinis value prop'as DE rinkai.
+
+pricing: |
+  TODO: kainodaros info (EUR). Jei trūksta - aptariame per pokalbį.
+
+target_audience: |
+  TODO: kokios DE įmonės / roles / industrija?
+
+meeting:
+  participant_from_client: "Kozero team"
+  purpose: "Diskussion über Ihre Bedürfnisse / Discuss your needs"
+  duration_minutes: 30
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+faq: []
+
+boundaries:
+  cannot_promise:
+    - "Konkrete Preise ohne Gespräch"
+    - "Lieferzeiten ohne Abstimmung"
+  escalate_topics:
+    - "Rechtliche Fragen"
+    - "Komplexe technische Anfragen"
+
+tone:
+  formality: "semi-formal"
+  addressing: "Sie"  # formalus DE Sie, ne du
+  language: "de"  # DE dominuoja, bet auto-detect veiks jei EN/LT atsakymas
+  personality: |
+    Professionell, sachlich, präzise. Deutscher Business-Stil - direkt aber höflich.
+  max_reply_length_sentences: 5
+  sign_off: "Mit freundlichen Grüßen"
+  sender_name: "Paulius"
+
+# DE language hints - agent'ui gramatiškai padaryti korektišką DE
+language_hints: |
+  DE stilius:
+    - "Sehr geehrte Damen und Herren" (formal opening if unknown)
+    - "Mit freundlichen Grüßen" sign-off (formal)
+    - Sie (ne du) - formalus kreipinys
+    - Dalykiškas tonas, be overselling
