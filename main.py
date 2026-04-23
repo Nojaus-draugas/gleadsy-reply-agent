@@ -794,6 +794,15 @@ async def playground_api(request: Request):
     notifications = []
     conf_threshold = config.CONFIDENCE_THRESHOLD
 
+    # -2. Empty reply guard - agent'as sugeneravo tuscia atsakyma
+    if not reply or not reply.strip():
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "crit",
+            "event": "⚠️ Tuscias draft'as",
+            "detail": "Agent'as sugeneravo tuscia atsakyma (dazniausiai - dar nera reply template'o sitai klasifikacijai arba Claude grazino empty content). Production'e NIEKAS nebus siunciama - eskaluosiu tau per Slack+email, peziuresi ir atsakysi rankomis.",
+        })
+
     # -1. LEAD_SENT_DOCUMENT - auto-reply praleistas, eskaluojama Pauliui
     # (simuliuojama per simulated_attachments lauka is playground UI)
     if simulated_attachments:

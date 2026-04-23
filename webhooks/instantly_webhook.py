@@ -569,6 +569,41 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         })
         return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
+    # 11b. Empty reply guard - NIEKADA nesiuskim tuscio reply.
+    # generate_reply() grazina "" jei classification neturi template'o arba Claude
+    # atsako su empty content. Be sito guard'o galetu pasitaikyti empty email.
+    if not agent_reply or not agent_reply.strip():
+        logger.warning(f"Empty reply generated for {lead_email} (classification={classification.category}) - escalating")
+        await notify_error("empty_reply_generated", f"Agent sugeneravo tusti atsakyma {lead_email} (cls={classification.category})")
+        await notify_escalation(
+            lead_email,
+            payload.get("campaign_name", ""),
+            f"Tuscias draft'as (cls={classification.category}) - reikia peziuros",
+            reply_text,
+        )
+        try:
+            notify_escalation_email(
+                lead_email, client_id, classification.category,
+                classification.confidence, reply_text,
+                f"Agent'as sugeneravo tuscia draft'a (classification={classification.category}). "
+                f"Sis atsakymas NEBUVO issiunciamas. Peziurek ir atsakyk rankiniu budu per Instantly.",
+            )
+        except Exception as e:
+            logger.error(f"notify_escalation_email (empty reply) failed: {e}")
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": classification.category,
+            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "agent_reply": "", "was_sent": False, "thread_position": thread_position,
+            "quality_score": 0,
+            "quality_issues": json.dumps(["empty_reply"], ensure_ascii=False),
+            "quality_summary": "Agent sugeneravo tuscia atsakyma - escalated",
+            "reply_subject": payload.get("reply_subject", ""),
+        })
+        return {"status": "escalated", "reason": "empty_reply"}
+
     # 12a. Hallucination guard - deterministinis regex check'as prieš LLM quality review
     hallucination_issues = check_hallucinations(agent_reply, client_config)
     if hallucination_issues:
