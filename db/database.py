@@ -95,6 +95,8 @@ MIGRATIONS = [
     "ALTER TABLE interactions ADD COLUMN edit_history TEXT",
     "ALTER TABLE interactions ADD COLUMN final_sent_text TEXT",
     "CREATE INDEX IF NOT EXISTS idx_interactions_approval ON interactions(approval_status)",
+    # 2026-04-23 - capture Instantly reply_subject for accurate approve thread subject
+    "ALTER TABLE interactions ADD COLUMN reply_subject TEXT",
 ]
 
 
@@ -193,8 +195,9 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
          faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
          quality_score, quality_issues, quality_summary, improvement_suggestion,
          tokens_in, tokens_out, tokens_cache_read, cost_usd,
-         original_language, prospect_message_lt, agent_reply_lt, approval_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         original_language, prospect_message_lt, agent_reply_lt, approval_status,
+         reply_subject)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["campaign_id"], data.get("campaign_name"), data["lead_email"],
             data.get("email_account"), data["email_id"], data["client_id"],
@@ -210,6 +213,7 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
             data.get("tokens_cache_read"), data.get("cost_usd"),
             data.get("original_language"), data.get("prospect_message_lt"),
             data.get("agent_reply_lt"), data.get("approval_status"),
+            data.get("reply_subject"),
         ),
     )
     await conn.commit()

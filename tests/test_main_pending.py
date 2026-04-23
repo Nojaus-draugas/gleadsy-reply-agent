@@ -326,3 +326,79 @@ async def test_edit_draft_returns_409_if_already_approved(client_with_db):
     # Should NOT have called Claude - spec says guard first
     mock_rw.assert_not_called()
     assert r.status_code in (404, 409)
+
+
+@pytest.mark.asyncio
+async def test_approve_uses_stored_reply_subject(client_with_db):
+    client, db = client_with_db
+    # Seed with a specific reply_subject stored
+    from db.database import log_interaction
+    iid = await log_interaction(db, {
+        "campaign_id": "c1", "lead_email": "p@acme.fr",
+        "email_id": "eid-subj-test", "client_id": "gleadsy_fr",
+        "prospect_message": "Bonjour", "classification": "QUESTION",
+        "confidence": 0.9, "agent_reply": "Merci",
+        "approval_status": "pending", "was_sent": False,
+        "reply_subject": "Question sur vos services",
+    })
+
+    sent_args = {}
+    async def capture_send(**kwargs):
+        sent_args.update(kwargs)
+        return {}
+
+    with patch("main.send_reply", new=capture_send):
+        r = await client.post(f"/api/approve/{iid}", json={})
+    assert r.status_code == 200
+    # Subject prepended with "Re: " since stored subject doesn't already have it
+    assert sent_args["subject"] == "Re: Question sur vos services"
+
+
+@pytest.mark.asyncio
+async def test_approve_does_not_double_prefix_re(client_with_db):
+    client, db = client_with_db
+    from db.database import log_interaction
+    iid = await log_interaction(db, {
+        "campaign_id": "c1", "lead_email": "p@acme.fr",
+        "email_id": "eid-re-test", "client_id": "gleadsy_fr",
+        "prospect_message": "Bonjour", "classification": "QUESTION",
+        "confidence": 0.9, "agent_reply": "Merci",
+        "approval_status": "pending", "was_sent": False,
+        "reply_subject": "Re: Question sur vos services",  # already has Re:
+    })
+
+    sent_args = {}
+    async def capture_send(**kwargs):
+        sent_args.update(kwargs)
+        return {}
+
+    with patch("main.send_reply", new=capture_send):
+        r = await client.post(f"/api/approve/{iid}", json={})
+    assert r.status_code == 200
+    # No double "Re: Re: " prefix
+    assert sent_args["subject"] == "Re: Question sur vos services"
+
+
+@pytest.mark.asyncio
+async def test_approve_falls_back_to_campaign_name_if_no_subject_stored(client_with_db):
+    client, db = client_with_db
+    from db.database import log_interaction
+    iid = await log_interaction(db, {
+        "campaign_id": "c1", "campaign_name": "Gleadsy FR outreach",
+        "lead_email": "p@acme.fr", "email_id": "eid-fallback",
+        "client_id": "gleadsy_fr",
+        "prospect_message": "Bonjour", "classification": "QUESTION",
+        "confidence": 0.9, "agent_reply": "Merci",
+        "approval_status": "pending", "was_sent": False,
+        # reply_subject intentionally omitted
+    })
+
+    sent_args = {}
+    async def capture_send(**kwargs):
+        sent_args.update(kwargs)
+        return {}
+
+    with patch("main.send_reply", new=capture_send):
+        r = await client.post(f"/api/approve/{iid}", json={})
+    assert r.status_code == 200
+    assert sent_args["subject"] == "Re: Gleadsy FR outreach"

@@ -177,6 +177,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "prospect_message": reply_text, "classification": "API_ERROR",
             "confidence": 0.0, "classification_reasoning": f"Claude API unavailable: {e}",
             "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
@@ -204,6 +205,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "prospect_message": reply_text, "classification": classification.category,
             "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
             "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {"status": "escalated", "reason": "uncertain"}
 
@@ -253,6 +255,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "confidence": classification.confidence,
             "classification_reasoning": (classification.reasoning or "") + (f" | auto-action: {auto_action_note}" if auto_action_note else ""),
             "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {
             "status": "logged",
@@ -277,6 +280,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "prospect_message": reply_text, "classification": "OUT_OF_OFFICE",
             "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
             "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {"status": "logged", "reason": "out_of_office"}
 
@@ -324,6 +328,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                                 "prospect_message": reply_text, "classification": "INTERESTED",
                                 "confidence": classification.confidence, "classification_reasoning": "Meeting confirmation generation failed",
                                 "was_sent": False, "thread_position": thread_position,
+                                "reply_subject": payload.get("reply_subject", ""),
                             })
                             return {"status": "error", "reason": f"Claude API unavailable: {e}"}
                         log_test_reply(
@@ -345,6 +350,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                             "prospect_message": reply_text, "classification": "INTERESTED",
                             "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
                             "agent_reply": conf_reply, "was_sent": False, "thread_position": thread_position,
+                            "reply_subject": payload.get("reply_subject", ""),
                         })
                         await update_outcome(db, iid, "meeting_booked")
                         return {"status": "test_mode_meeting_would_book", "interaction_id": iid}
@@ -375,6 +381,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                                 "prospect_message": reply_text, "classification": "INTERESTED",
                                 "confidence": classification.confidence, "classification_reasoning": "Meeting created but confirmation email generation failed",
                                 "was_sent": False, "thread_position": thread_position,
+                                "reply_subject": payload.get("reply_subject", ""),
                             })
                             return {"status": "error", "reason": f"Meeting created but confirmation generation failed: {e}"}
                         await send_reply(payload.get("email_account", ""), email_id, payload.get("reply_subject", ""), conf_reply)
@@ -385,6 +392,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                             "prospect_message": reply_text, "classification": "INTERESTED",
                             "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
                             "agent_reply": conf_reply, "was_sent": True, "thread_position": thread_position,
+                            "reply_subject": payload.get("reply_subject", ""),
                         })
                         await update_outcome(db, iid, "meeting_booked")
                         await log_meeting(db, {
@@ -402,6 +410,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 "prospect_message": reply_text, "classification": "UNCERTAIN",
                 "confidence": classification.confidence, "classification_reasoning": "Time confirmation parse failed",
                 "was_sent": False, "thread_position": thread_position,
+                "reply_subject": payload.get("reply_subject", ""),
             })
             return {"status": "escalated", "reason": "time confirmation unclear"}
 
@@ -449,6 +458,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 "prospect_message": reply_text, "classification": "QUESTION",
                 "confidence": classification.confidence, "classification_reasoning": f"FAQ no match (confidence={faq_confidence})",
                 "was_sent": False, "thread_position": thread_position,
+                "reply_subject": payload.get("reply_subject", ""),
             })
             notify_unknown_question_email(lead_email, client_id, reply_text, iid)
             logger.info(f"QUESTION with low FAQ confidence ({faq_confidence}) for {lead_email} - waiting for human")
@@ -483,6 +493,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "prospect_message": reply_text, "classification": classification.category,
             "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
             "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
@@ -532,6 +543,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "quality_score": quality.score, "quality_issues": json.dumps(quality.issues, ensure_ascii=False),
             "quality_summary": quality.summary,
             "improvement_suggestion": getattr(quality, "improvement_suggestion", "") or "",
+            "reply_subject": payload.get("reply_subject", ""),
         })
         return {"status": "quality_failed", "interaction_id": iid, "quality_score": quality.score}
 
@@ -560,6 +572,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             "original_language": original_language,
             "prospect_message_lt": prospect_message_lt,
             "agent_reply_lt": agent_reply_lt,
+            "reply_subject": payload.get("reply_subject", ""),
         })
         await notify_approval_pending(
             iid=iid,
@@ -604,6 +617,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
                 "prospect_message": reply_text, "classification": classification.category,
                 "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
                 "agent_reply": agent_reply, "was_sent": False, "thread_position": thread_position,
+                "reply_subject": payload.get("reply_subject", ""),
             })
             return {"status": "error", "reason": f"send failed: {e}"}
         was_sent = True
@@ -626,6 +640,7 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         "original_language": original_language,
         "prospect_message_lt": prospect_message_lt,
         "agent_reply_lt": agent_reply_lt,
+        "reply_subject": payload.get("reply_subject", ""),
     })
 
     # 15. Slack notification

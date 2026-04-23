@@ -1336,7 +1336,7 @@ async def api_approve(iid: int, request: Request):
 
     # Fetch draft data AFTER claiming
     cursor = await db.execute(
-        "SELECT lead_email, email_account, email_id, agent_reply, campaign_id, campaign_name "
+        "SELECT lead_email, email_account, email_id, agent_reply, campaign_id, campaign_name, reply_subject "
         "FROM interactions WHERE id = ?",
         (iid,),
     )
@@ -1345,7 +1345,16 @@ async def api_approve(iid: int, request: Request):
         # Should never happen - we just claimed it
         raise HTTPException(status_code=404)
     row = dict(row)
-    subject = f"Re: {row.get('campaign_name') or ''}".strip() if row.get("campaign_name") else ""
+    stored_subject = (row.get("reply_subject") or "").strip()
+    if stored_subject:
+        # Prepend "Re: " if recipient's thread subject doesn't already have it
+        if stored_subject.lower().startswith("re:"):
+            subject = stored_subject
+        else:
+            subject = f"Re: {stored_subject}"
+    else:
+        # Fallback: synthetic subject from campaign name
+        subject = f"Re: {row.get('campaign_name') or ''}".strip() if row.get("campaign_name") else ""
 
     try:
         await send_reply(

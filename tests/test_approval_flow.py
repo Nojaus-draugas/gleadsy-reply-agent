@@ -205,3 +205,23 @@ async def test_restore_pending_after_failed_send(db):
     assert (await cursor.fetchone())["approval_status"] == "pending"
     # Now claimable again
     assert await atomically_claim_for_approval(db, iid) is True
+
+
+@pytest.mark.asyncio
+async def test_log_interaction_stores_reply_subject(db):
+    iid = await _log_pending(db, email_id="eid-subj", reply_subject="Inquiry about pricing")
+    cursor = await db.execute(
+        "SELECT reply_subject FROM interactions WHERE id = ?", (iid,)
+    )
+    row = await cursor.fetchone()
+    assert row["reply_subject"] == "Inquiry about pricing"
+
+
+@pytest.mark.asyncio
+async def test_log_interaction_reply_subject_defaults_to_none(db):
+    iid = await _log_pending(db, email_id="eid-nosubj")
+    cursor = await db.execute(
+        "SELECT reply_subject FROM interactions WHERE id = ?", (iid,)
+    )
+    row = await cursor.fetchone()
+    assert row["reply_subject"] is None
