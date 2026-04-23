@@ -86,6 +86,47 @@ def build_reply_system_prompt(client: dict, anti_patterns_section: str, few_shot
 
 
 REPLY_USER_PROMPTS = {
+    "ORDER_PLACED": """Prospektas patvirtino užsakymą / nori pirkti DABAR.
+Jų paskutinė žinutė: \"\"\"{reply_text}\"\"\"
+{thread_history}
+
+## Sprendimo taisyklė - UZSAKYMO PATVIRTINIMAS
+
+Čia NĖRA kvalifikavimo fazė. Prospektas jau apsisprendė. Tavo užduotis:
+
+1) **Trumpai patvirtink gavęs užsakymą** - vienu sakiniu, šiltai ir profesionaliai ("Ačiū, užsakymas gautas!", "Super, fiksuoju užsakymą", "Puiku, paruošiame sąskaitą").
+
+2) **Pakartok užsakymo esmę kaip tai supratai** (kiekis + produktas, jei prospect'as nurodė) - kad abipus išvengtume nesusipratimo. Pvz. "Fiksuoju: 500 vnt. I-300 sijų." Jei prospect'as pateikė NEpilną info (tik "paimu" be kiekio/specifikos) - nepramanyk skaičių, tiesiog paprašyk patikslinti.
+
+3) **PAPRASK ĮMONĖS REKVIZITŲ SĄSKAITAI IŠRAŠYTI.** Tai PRIVALOMA šio atsakymo dalis. Aiškiai išvardink ką reikia:
+   - Įmonės pavadinimas
+   - Įmonės kodas
+   - PVM mokėtojo kodas (jei yra)
+   - Registracijos / juridinis adresas
+   - Sąskaitos gavėjo el. paštas (kur siųsti PDF sąskaitą)
+   - Kontaktinis asmuo (vardas + pareigos + telefonas)
+
+   Pavyzdinė forma (pritaikyk kalbai):
+   LT: "Kad galėtume išrašyti sąskaitą, prašome atsiųsti įmonės rekvizitus: pavadinimą, įmonės kodą, PVM kodą, juridinį adresą, sąskaitos gavėjo el. paštą ir kontaktinį asmenį."
+   EN: "To issue the invoice, please send your company details: legal name, company registration number, VAT number, registered address, billing email, and contact person."
+   FR: "Pour émettre la facture, merci de nous envoyer vos coordonnées: raison sociale, numéro SIRET, numéro TVA, adresse du siège, email de facturation et personne de contact."
+
+4) **Jei reikia pristatymo info** (fiziniai produktai - IBJOIST sijos, Puoškio marškinėliai ir pan.) - paprašyk pristatymo adreso ir pageidaujamos datos. Paslaugų atveju (Gleadsy outreach, Elitetechbyte web-dev) - šios dalies nereikia.
+
+5) **Paminėk next step** - kad Paulius greitai (per 24h / šiandien) atsiųs sąskaitą ir patvirtins detales. Nežadėk konkrečių skaičių ar terminų, kurių NĖRA brief'e.
+
+## Svarbu
+- Atsakyk prospect'o žinutės kalba (jei LT tai LT, jei EN tai EN, jei FR tai FR).
+- Tonas profesionalus + šiltas (ne per formalus, ne per familiarus).
+- Max 5-7 sakiniai - užsakymo patvirtinimas reikalauja šiek tiek daugiau nei įprasta.
+- NEŽADĖK kainų, terminų, garantijų, kurių nėra brief'e.
+- NEsiūlyk susitikimo - užsakymas jau padarytas, nereikia "pakalbėti".
+- Jei prospect'as jau pats pateikė rekvizitus žinutėje - NEPRAŠYK jų dar kartą, tik patvirtink gavęs ir nurodyk trūkstamas detales.
+
+Pastaba TAU (ne į atsakymą): šis draft'as visada eina į approval queue - Paulius peržiūrės prieš siunčiant. Draft'as turi būti toks, kad Paulius galėtų minimaliai koreguoti ir išsiųsti.
+
+TIK atsakymo tekstas, be paaiškinimų ar JSON.""",
+
     "INTERESTED": """Prospektas parodė susidomėjimo signalą.
 Jų paskutinė žinutė: \"\"\"{reply_text}\"\"\"
 
