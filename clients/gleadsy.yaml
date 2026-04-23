@@ -101,7 +101,7 @@ boundaries:
 tone:
   formality: "semi-formal"
   addressing: "Jūs"
-  language: "lt"
+  language: "auto"  # auto-detect iš prospect'o žinutės (LT/EN dominuoja, FR retas)
   personality: |
     Draugiškas, trumpas, be korporatyvinio žargono. Gali naudoti casual elementus:
     - emoji ";)" arba ":)" kartais (ne visur)

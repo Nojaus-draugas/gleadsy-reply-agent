@@ -3,8 +3,10 @@ client_id: "ibjoist"
 client_name: "IBJOIST"
 
 campaigns:
-  - "c7d5396f-197f-446f-a344-913217401e23"   # IBjoist - stogdengiai
-  - "b16aea0f-2dce-42f0-8ba3-013a1181bdef"   # IBjoist - kitos statybos veiklos
+  - "c7d5396f-197f-446f-a344-913217401e23"   # IBjoist - stogdengiai (UK, active)
+  - "b16aea0f-2dce-42f0-8ba3-013a1181bdef"   # IBjoist - kitos statybos veiklos (UK, active)
+  - "f496aa52-713f-44b0-b19e-e65ca9b6c1f7"   # IBJOIST v2 - Ossature Bois France (FR, active)
+  - "ae03a523-2295-4baf-8511-acba91cc7f08"   # IBJOIST v2 CCMI - Constructeurs France (FR, draft, 535 leads)
 
 company_description: |
   IBJOIST - lietuviška medinių I-sijų gamintoja. Gamina OSB I-sijas
@@ -54,9 +56,19 @@ value_proposition: |
   Gamyba Lietuvoje - trumpi pristatymo terminai ir konkurencingos kainos.
 
 pricing: |
-  Kainos nuo 5,50 €/m iki 10,90 €/m (+PVM), priklauso nuo sijos aukščio.
+  Kainų range: nuo 5,50 €/m iki 10,90 €/m (+PVM), priklauso nuo sijos aukščio.
   Pristatymas Lietuvoje aptariamas individualiai.
-  Tikslesnę kainą pateikiame pagal konkretų užsakymą.
+
+  SVARBU (NIEKADA nepažeisk):
+  - NETURIME konkrečios kainos per-aukštis lentelės brief'e. Todėl NIEKADA
+    nesakyk kliento "H-300 kainuoja 7,20 €/m" ar pan. konkretaus skaičiaus.
+  - Jei klientas klausia konkretaus aukščio kainos arba pateikia projekto
+    specifiką (kiekis + aukštis) - NEISSIGALVOK skaičių. Atsakyk taip:
+    * "H-300 sijos patenka į 5,50-10,90 €/m range'ą. Tikslią kainą 800m
+      užsakymui paskaičiuosiu šiandien iki vakaro - atsiųsiu PDF'ą ;)"
+    * Arba: "Prisegu PDF katalogą su visomis aukščiais ir kainomis pagal metrą"
+    * Veiksmas/pažadas > konkretus skaičius, kurio nežinai.
+  - Tik range (5,50-10,90) yra saugu paminėti. Viskas kas siauriau - halucinuoti.
 
 target_audience: |
   Statybos įmonės, stogdengiai, rangovai ir individualių namų statytojai

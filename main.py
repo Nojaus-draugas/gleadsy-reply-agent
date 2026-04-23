@@ -361,6 +361,180 @@ async def logout():
     return response
 
 
+@app.get("/playground")
+async def playground_page(request: Request):
+    """Playground - test agent'o atsakymus be siuntimo. Pauliaus sandbox."""
+    from fastapi.responses import HTMLResponse
+    if not _get_dashboard_session(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    client_options = "".join(f'<option value="{c}">{c}</option>' for c in clients.keys())
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Playground</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; max-width: 900px; margin: 30px auto; padding: 20px; background: #f5f5f5; color: #333; }}
+h1 {{ color: #1565c0; }}
+.back {{ color: #4285f4; text-decoration: none; font-size: 14px; }}
+.card {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }}
+label {{ display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: #555; }}
+textarea, input, select {{ width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-top: 4px; box-sizing: border-box; }}
+textarea {{ font-family: inherit; min-height: 100px; resize: vertical; }}
+button {{ padding: 12px 24px; background: #1565c0; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin-top: 16px; }}
+button:hover {{ background: #0d47a1; }}
+button:disabled {{ background: #999; }}
+.result {{ background: #f8f9fa; border-left: 4px solid #2e7d32; padding: 16px 20px; border-radius: 6px; margin-top: 12px; white-space: pre-wrap; font-size: 14px; line-height: 1.5; }}
+.meta {{ color: #666; font-size: 12px; margin-top: 8px; }}
+.hint {{ color: #888; font-size: 12px; margin-top: 4px; }}
+.examples button {{ background: #eee; color: #333; padding: 6px 12px; margin: 4px 4px 4px 0; font-size: 12px; font-weight: normal; }}
+.examples button:hover {{ background: #ddd; }}
+</style></head><body>
+<a href="/replies" class="back">&larr; Grįžti į dashboard</a>
+<h1>🎮 Playground</h1>
+<p class="hint">Testuok agent'o atsakymus be siuntimo. Nieko neįrašoma į DB, nieko neleistinamas prospectui.</p>
+
+<div class="card">
+    <label>Klientas</label>
+    <select id="client">{client_options}</select>
+
+    <label>Thread position</label>
+    <select id="tpos">
+        <option value="1">1 (pirmas atsakymas)</option>
+        <option value="2" selected>2 (antras / po Pauliaus cold)</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+    </select>
+
+    <label>Prospect'o žinutė</label>
+    <textarea id="prospect" placeholder="Pvz.: Sveiki, domina. Kainos ir terminai?"></textarea>
+
+    <label>Thread istorija (neprivaloma, bet naudinga)</label>
+    <textarea id="history" placeholder="[Paulius cold email]: Sveiki, gaminame I-sijas... Ar domintų plačiau?"></textarea>
+
+    <div class="examples" style="margin-top: 12px">
+        <strong style="font-size: 12px; color: #555">Pavyzdžiai:</strong><br>
+        <button onclick="preset('ibjoist',2,'Sveiki. Taip domina. Kainos terminai ir pristatymas','')">Skardesta (QUESTION kaina)</button>
+        <button onclick="preset('gleadsy',2,'Labas, O kas per kampanijos? LinkedIn bandeme, neveike.','')">Irmantas (objection)</button>
+        <button onclick="preset('puoskio-spauda',2,'Per brangu. Radom pigiau po 4 eur/vnt.','')">Budget pushback</button>
+        <button onclick="preset('gleadsy',1,'Hi, thanks for your message. Tell me more about pricing.','')">EN prospect</button>
+        <button onclick="preset('ibjoist',2,'Combien ça coûte par mètre pour 500m H-300?','')">FR kaina</button>
+    </div>
+
+    <button onclick="run()">▶ Generuoti draft'ą</button>
+</div>
+
+<div id="output"></div>
+
+<script>
+function preset(c, t, p, h) {{
+    document.getElementById('client').value = c;
+    document.getElementById('tpos').value = t;
+    document.getElementById('prospect').value = p;
+    document.getElementById('history').value = h;
+}}
+async function run() {{
+    const btn = event.target; btn.disabled = true; btn.textContent = 'Generuoju...';
+    document.getElementById('output').innerHTML = '';
+    try {{
+        const res = await fetch('/api/playground', {{
+            method: 'POST', headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{
+                client_id: document.getElementById('client').value,
+                thread_position: parseInt(document.getElementById('tpos').value),
+                prospect: document.getElementById('prospect').value,
+                thread_history: document.getElementById('history').value,
+            }})
+        }});
+        const d = await res.json();
+        if (d.error) {{
+            document.getElementById('output').innerHTML = '<div class="card" style="border-left:4px solid #c62828"><strong>Klaida:</strong> ' + d.error + '</div>';
+        }} else {{
+            const q = d.quality || {{}};
+            document.getElementById('output').innerHTML = `
+                <div class="card">
+                    <h3 style="margin-top:0">Agent draft</h3>
+                    <div class="result">${{d.reply}}</div>
+                    <div class="meta">
+                        <strong>Klasifikacija:</strong> ${{d.classification}} (conf ${{(d.confidence*100).toFixed(0)}}%)<br>
+                        <strong>Kodėl:</strong> ${{d.reasoning || '-'}}<br>
+                        <strong>Quality:</strong> ${{q.score || '-'}}/10 - ${{q.summary || '-'}}<br>
+                        ${{q.improvement_suggestion ? '<strong>Ką patobulinti:</strong> ' + q.improvement_suggestion + '<br>' : ''}}
+                        <strong>Few-shots panaudoti:</strong> ${{d.few_shots_count}}<br>
+                        <strong>Cost:</strong> $${{d.cost_usd.toFixed(4)}}
+                    </div>
+                </div>`;
+        }}
+    }} catch(e) {{
+        document.getElementById('output').innerHTML = '<div class="card" style="border-left:4px solid #c62828">Klaida: ' + e.message + '</div>';
+    }}
+    btn.disabled = false; btn.textContent = '▶ Generuoti draft\u0105';
+}}
+</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/api/playground")
+async def playground_api(request: Request):
+    """Playground API - generuoja draft'ą be įrašymo į DB ir be siuntimo."""
+    from fastapi.responses import JSONResponse
+    if not _get_dashboard_session(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    body = await request.json()
+    client_id = body.get("client_id", "gleadsy")
+    thread_position = int(body.get("thread_position", 1))
+    prospect = body.get("prospect", "").strip()
+    thread_history = body.get("thread_history", "").strip()
+
+    if not prospect:
+        return JSONResponse({"error": "prospect message is empty"})
+    if client_id not in clients:
+        return JSONResponse({"error": f"unknown client: {client_id}"})
+
+    from core.classifier import classify_reply, reset_usage_context, get_usage_snapshot
+    from core.reply_generator import generate_reply
+    from core.self_improver import get_best_examples, get_anti_patterns
+    from core.quality_reviewer import review_quality
+
+    client_config = clients[client_id]
+    reset_usage_context()
+
+    try:
+        cls = await classify_reply(prospect, client_id, thread_position)
+        fs = await get_best_examples(db, cls.category, client_id, limit=3)
+        ap = await get_anti_patterns(db, cls.category, client_id, limit=2)
+        reply = await generate_reply(
+            prospect_message=prospect, classification=cls.category,
+            client_config=client_config, few_shots=fs, anti_patterns=ap,
+            available_slots=None, matching_faq=None,
+            thread_position=thread_position, thread_history=thread_history,
+        )
+        quality = await review_quality(
+            prospect_message=prospect, classification=cls.category,
+            generated_reply=reply, client_name=client_config.get("client_name", client_id),
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"playground error: {e}")
+        return JSONResponse({"error": str(e)})
+
+    usage = get_usage_snapshot()
+    return JSONResponse({
+        "reply": reply,
+        "classification": cls.category,
+        "confidence": cls.confidence,
+        "reasoning": cls.reasoning,
+        "quality": {
+            "score": quality.score,
+            "summary": quality.summary,
+            "issues": quality.issues,
+            "improvement_suggestion": getattr(quality, "improvement_suggestion", "") or "",
+        },
+        "few_shots_count": len(fs),
+        "cost_usd": usage.get("cost_usd", 0),
+    })
+
+
 @app.get("/learning")
 async def learning_dashboard(request: Request):
     """Mokymosi progresas + Pauliaus stiliaus profilis."""
@@ -762,6 +936,7 @@ tr:hover {{ background: #f0f7ff; }}
     <h1>Gleadsy Reply Agent</h1>
     <div style="display:flex;gap:8px;align-items:center">
         {pending_badge_html}
+        <a href="/playground" style="padding:8px 14px;background:#2e7d32;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎮 Playground</a>
         <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymosi progresas</a>
         <form method="POST" action="/logout" style="margin:0">
             <button type="submit" class="logout-btn">Atsijungti</button>
