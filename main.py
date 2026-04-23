@@ -609,6 +609,13 @@ button:disabled {{ background: #999; }}
 .hint {{ color: #888; font-size: 12px; margin-top: 4px; }}
 .examples button {{ background: #eee; color: #333; padding: 6px 12px; margin: 4px 4px 4px 0; font-size: 12px; font-weight: normal; }}
 .examples button:hover {{ background: #ddd; }}
+.notif {{ padding: 10px 14px; margin: 8px 0; border-radius: 6px; font-size: 13px; }}
+.notif-info {{ background: #e8f5e9; border-left: 3px solid #2e7d32; }}
+.notif-warn {{ background: #fff3e0; border-left: 3px solid #e65100; }}
+.notif-crit {{ background: #ffebee; border-left: 3px solid #c62828; }}
+.notif-head {{ display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }}
+.notif-chan {{ padding: 2px 8px; background: rgba(0,0,0,0.08); border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }}
+.notif-detail {{ color: #555; font-size: 12px; line-height: 1.5; }}
 </style></head><body>
 <a href="/replies" class="back">&larr; Grįžti į dashboard</a>
 <h1>🎮 Playground</h1>
@@ -685,6 +692,18 @@ async function run() {{
                         <strong>📎 Priedai (būtų prisegta):</strong> ${{(d.attachments_would_be_sent || []).length ? d.attachments_would_be_sent.join(', ') : 'jokių'}}<br>
                         <strong>Cost:</strong> $${{d.cost_usd.toFixed(4)}}
                     </div>
+                </div>
+                <div class="card" style="border-left:4px solid #e65100">
+                    <h3 style="margin-top:0">🔔 Notifikacijos (jei šitas realiai vyktų)</h3>
+                    ${{(d.notifications_would_trigger || []).length ? (d.notifications_would_trigger || []).map(n => `
+                        <div class="notif notif-${{n.severity}}">
+                            <div class="notif-head">
+                                <span class="notif-chan">${{n.channel}}</span>
+                                <strong>${{n.event}}</strong>
+                            </div>
+                            <div class="notif-detail">${{n.detail}}</div>
+                        </div>
+                    `).join('') : '<p style="color:#999">Jokių notifikacijų šitam scenarijui</p>'}}
                 </div>`;
         }}
     }} catch(e) {{
@@ -754,6 +773,116 @@ async def playground_api(request: Request):
         attachment_names = []
         prospect_lang = "lt"
 
+    # Simuliuoju kokios notifikacijos triggerint\u0173si si scenarijui
+    notifications = []
+    conf_threshold = config.CONFIDENCE_THRESHOLD
+
+    # 1. UNCERTAIN arba low confidence -> escalation
+    if cls.category == "UNCERTAIN" or cls.confidence < conf_threshold:
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "warn",
+            "event": "UNCERTAIN klasifikacija",
+            "detail": f"Conf {cls.confidence:.0%} < threshold {conf_threshold:.0%} - tau reikia peržiūrėti",
+        })
+
+    # 2. Quality failed
+    if quality.score and quality.score < 7:
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "warn",
+            "event": "Quality gate failed",
+            "detail": f"Score {quality.score}/10 - draft NEBUS siunčiamas, eskaluoju tau",
+        })
+
+    # 3. Hallucination
+    try:
+        from core.hallucination_guard import check_reply as check_hall
+        hall_issues = check_hall(reply, client_config)
+        if hall_issues:
+            notifications.append({
+                "channel": "slack+email",
+                "severity": "crit",
+                "event": "HALLUCINATION aptikta",
+                "detail": "; ".join(hall_issues[:2]),
+            })
+    except Exception:
+        pass
+
+    # 4. UNSUBSCRIBE auto-action
+    if cls.category == "UNSUBSCRIBE":
+        if cls.confidence >= float(config.UNSUBSCRIBE_CONFIDENCE_MIN):
+            notifications.append({
+                "channel": "slack",
+                "severity": "info",
+                "event": "UNSUBSCRIBE auto-action",
+                "detail": "Lead'as pridedamas į Instantly blocklist + ištrinamas iš kampanijos",
+            })
+        else:
+            notifications.append({
+                "channel": "slack",
+                "severity": "warn",
+                "event": "UNSUBSCRIBE (nepakankama confidence)",
+                "detail": f"Conf {cls.confidence:.0%} < {config.UNSUBSCRIBE_CONFIDENCE_MIN:.0%} - logged only, no auto-action",
+            })
+
+    # 5. INTERESTED lead -> email
+    if cls.category == "INTERESTED":
+        notifications.append({
+            "channel": "email",
+            "severity": "info",
+            "event": "INTERESTED lead",
+            "detail": f"Tau siunčiama email'as į {config.NOTIFY_EMAIL or '(NOTIFY_EMAIL nenustatytas)'} - naujas hot lead",
+        })
+
+    # 6. FAQ no match
+    if cls.category == "QUESTION":
+        notifications.append({
+            "channel": "email (jei FAQ nerandamas)",
+            "severity": "warn",
+            "event": "QUESTION - FAQ lookup",
+            "detail": "Jei LLM'as nerastų tinkamo FAQ atsakymo (conf <0.7), eskaluočiau tau rankiniam atsakymui",
+        })
+
+    # 7. Meeting booking detected in reply
+    meeting_words = ["sutarkime", "galėtume susitikti", "siūlau", "trečiadienį", "ketvirtadienį",
+                     "penktadienį", "pirmadienį", "antradienį", "val.", "10:00", "14:00", "15:00"]
+    if any(w in reply.lower() for w in meeting_words) and cls.category == "INTERESTED":
+        notifications.append({
+            "channel": "slack",
+            "severity": "info",
+            "event": "Meeting booked (JEI prospect'as patvirtins)",
+            "detail": "Kai lead'as atsakys 'taip, sutarkime' - sukursiu Google Calendar event + praneš tau",
+        })
+
+    # 8. PDF attachment
+    if attachment_names:
+        notifications.append({
+            "channel": "info (siuntimo metu)",
+            "severity": "info",
+            "event": "📎 PDF priedas prisegamas",
+            "detail": f"Native priedas (ne URL): {', '.join(attachment_names)}",
+        })
+
+    # 9. Reply sent (success path)
+    if not notifications or all(n["severity"] == "info" for n in notifications):
+        if cls.category not in ("UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"):
+            notifications.append({
+                "channel": "slack",
+                "severity": "info",
+                "event": "Reply sent (info)",
+                "detail": "Sėkmingai išsiųsta - gausi info notifikaciją Slack'e",
+            })
+
+    # 10. Max replies (simuliacija - thread_position >= 5)
+    if thread_position >= 5:
+        notifications.append({
+            "channel": "slack",
+            "severity": "warn",
+            "event": "Max replies reached",
+            "detail": "5 atsakymai jau buvo - toliau neatsakinėju, eskaluoju tau",
+        })
+
     return JSONResponse({
         "reply": reply,
         "classification": cls.category,
@@ -769,6 +898,7 @@ async def playground_api(request: Request):
         "cost_usd": usage.get("cost_usd", 0),
         "detected_language": prospect_lang,
         "attachments_would_be_sent": attachment_names,
+        "notifications_would_trigger": notifications,
     })
 
 
