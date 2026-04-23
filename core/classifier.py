@@ -32,7 +32,7 @@ def get_usage_snapshot() -> dict:
         "cost_usd": round(ctx["cost_usd"], 6),
     }
 
-VALID_CATEGORIES = {"ORDER_PLACED", "INTERESTED", "QUESTION", "NOT_NOW", "REFERRAL", "UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"}
+VALID_CATEGORIES = {"ORDER_PLACED", "CALL_REQUEST", "WILL_CONTACT", "INTERESTED", "QUESTION", "NOT_NOW", "REFERRAL", "UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"}
 
 _client = None
 

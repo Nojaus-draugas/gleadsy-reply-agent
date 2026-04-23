@@ -351,6 +351,52 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         })
         return {"status": "logged", "reason": "out_of_office"}
 
+    # CALL_REQUEST - prospect'as prasyme paskambinti. Agent'as negali skambinti,
+    # todel NIEKAS nesiuncia (net draft'o) - iskart eskaluojam Pauliui.
+    if classification.category == "CALL_REQUEST":
+        logger.info(f"CALL_REQUEST from {lead_email}: escalating to Paulius (no auto-reply)")
+        try:
+            await notify_escalation(
+                lead_email, payload.get("campaign_name", ""),
+                "📞 Prospect prasyme paskambinti - reikia tavo skambucio",
+                reply_text,
+            )
+        except Exception as e:
+            logger.error(f"notify_escalation (call_request) failed: {e}")
+        try:
+            notify_escalation_email(
+                lead_email, client_id, "CALL_REQUEST",
+                classification.confidence, reply_text,
+                "Prospect'as prasyme paskambinti jam. Agent'as nesiuncia jokio atsakymo "
+                "(negali skambinti). Perziurek zinute ir paskambink tiesiogiai.",
+            )
+        except Exception as e:
+            logger.error(f"notify_escalation_email (call_request) failed: {e}")
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": "CALL_REQUEST",
+            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
+        })
+        return {"status": "escalated", "reason": "call_request"}
+
+    # WILL_CONTACT - prospect'as pats susisieks, nereikia atsakyti. Tik log'inam.
+    if classification.category == "WILL_CONTACT":
+        logger.info(f"WILL_CONTACT from {lead_email}: no reply needed (prospect will initiate)")
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text, "classification": "WILL_CONTACT",
+            "confidence": classification.confidence, "classification_reasoning": classification.reasoning,
+            "was_sent": False, "thread_position": thread_position,
+            "reply_subject": payload.get("reply_subject", ""),
+        })
+        return {"status": "logged", "reason": "will_contact"}
+
     # 11. Categories that get a reply: ORDER_PLACED, INTERESTED, QUESTION, NOT_NOW, REFERRAL
     # Detect language and resolve approval setting
     campaign_lang_hint = get_campaign_language({client_id: client_config}, campaign_id) \
@@ -358,9 +404,53 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
     original_language = detect_language(reply_text, campaign_lang_hint)
     approval_required = bool(client_config.get("approval_required", False))
 
+    # Blocked language check - kai kurie klientai turi kalbas, kuriu agent'as
+    # negeneruoja (pvz. IBJOIST FR - Paulius tvarko rankomis). Tai eskaluojam.
+    blocked_langs = [l.lower() for l in (client_config.get("blocked_languages") or [])]
+    if original_language and original_language.lower() in blocked_langs:
+        logger.info(f"Blocked language {original_language} for {client_id} - escalating {lead_email}")
+        try:
+            await notify_escalation(
+                lead_email, payload.get("campaign_name", ""),
+                f"🚫 Kalba {original_language.upper()} uzblokuota sio kliento ({client_id}) - Paulius tvarko rankomis",
+                reply_text,
+            )
+        except Exception as e:
+            logger.error(f"notify_escalation (blocked_lang) failed: {e}")
+        try:
+            notify_escalation_email(
+                lead_email, client_id, f"BLOCKED_LANG_{original_language.upper()}",
+                classification.confidence, reply_text,
+                f"Prospect'as atsake {original_language.upper()} kalba. Sio kliento "
+                f"konfiguracijoje ({client_id}) si kalba NEIjungta agent'o scope - "
+                f"Paulius tvarko rankomis. Atidaryk Instantly unibox ir atsakyk pats.",
+            )
+        except Exception as e:
+            logger.error(f"notify_escalation_email (blocked_lang) failed: {e}")
+        await log_interaction(db, {
+            "campaign_id": campaign_id, "campaign_name": payload.get("campaign_name"),
+            "lead_email": lead_email, "email_account": payload.get("email_account"),
+            "email_id": email_id, "client_id": client_id,
+            "prospect_message": reply_text,
+            "classification": f"BLOCKED_LANG_{original_language.upper()}",
+            "confidence": classification.confidence,
+            "classification_reasoning": f"Prospect atsake {original_language.upper()}, tai YAML blocked_languages saraso",
+            "was_sent": False, "thread_position": thread_position,
+            "original_language": original_language,
+            "reply_subject": payload.get("reply_subject", ""),
+        })
+        return {"status": "escalated", "reason": "blocked_language",
+                "language": original_language}
+
     # ORDER_PLACED visada force'ina approval - uzsakymai niekada neina automatiskai.
     # Paulius turi peziureti detales (kiekis, adresas, saskaita) pries siuntima.
     if classification.category == "ORDER_PLACED":
+        approval_required = True
+
+    # REFERRAL - klientas nukreipe i kita atsakinga zmogu. Agent'o draft yra tik
+    # mandagus acknowledgment - Paulius pats issiusi tikra message'a naujam adresatui.
+    # Todel force'inam approval.
+    if classification.category == "REFERRAL":
         approval_required = True
 
     few_shots = await get_best_examples(db, classification.category, client_id,

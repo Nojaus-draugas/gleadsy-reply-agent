@@ -203,8 +203,30 @@ def _get_dashboard_session(request: Request) -> bool:
     return True
 
 
-# Session token - generated on startup, lives in memory
-_session_token = secrets.token_urlsafe(32)
+# Session token - persisted to disk so restarts don't invalidate cookies
+_SESSION_TOKEN_PATH = config.DB_PATH.parent / "session_token"
+
+
+def _load_or_create_session_token() -> str:
+    try:
+        if _SESSION_TOKEN_PATH.exists():
+            token = _SESSION_TOKEN_PATH.read_text().strip()
+            if token:
+                return token
+    except Exception:
+        logger.exception("Failed to read session token, regenerating")
+    token = secrets.token_urlsafe(32)
+    try:
+        _SESSION_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SESSION_TOKEN_PATH.write_text(token)
+        os.chmod(_SESSION_TOKEN_PATH, 0o600)
+    except Exception:
+        logger.exception("Failed to persist session token")
+    return token
+
+
+_session_token = _load_or_create_session_token()
+SESSION_MAX_AGE = 86400  # 24h - reikia prisijungti kartą per dieną
 
 
 @app.post("/webhook/instantly")
@@ -327,7 +349,7 @@ async def login_submit(request: Request):
     password = form.get("password", "")
     if config.DASHBOARD_PASSWORD and secrets.compare_digest(password, config.DASHBOARD_PASSWORD):
         response = RedirectResponse(url="/replies", status_code=302)
-        response.set_cookie("gleadsy_session", _session_token, httponly=True, samesite="lax", max_age=86400 * 7)
+        response.set_cookie("gleadsy_session", _session_token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
         return response
     # Wrong password - show login with error
     html = """<!DOCTYPE html>
@@ -655,6 +677,10 @@ button:disabled {{ background: #999; }}
         <button onclick="preset('puoskio-spauda',3,'Ok, darom. Užsakau 300 marškinėlių. Sąskaitą į buhalterija@imone.lt','')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 Puoškio order</button>
         <button onclick="presetWithAtts('ibjoist',2,'Sveiki, prisegu mūsų projekto specifikaciją - tikimės kainų iki savaitės pabaigos.','','RFQ_statyba.pdf, brežinys.dwg')" style="background:#fff3e0;color:#e65100;font-weight:600">📎 Lead su PDF priedu</button>
         <button onclick="presetWithAtts('gleadsy',2,'Hi, please see attached our RFP for outreach services.','','RFP_outreach_2026.pdf')" style="background:#fff3e0;color:#e65100;font-weight:600">📎 EN RFP attached</button>
+        <button onclick="preset('ibjoist',2,'Skambinkit man +37060012345, aptarsim projektą','')" style="background:#f3e5f5;color:#6a1b9a;font-weight:600">📞 Call request LT</button>
+        <button onclick="preset('puoskio-spauda',2,'Susisieksime su jumis, kai turesime konkretu poreiki.','')" style="background:#e3f2fd;color:#1565c0;font-weight:600">✋ Will contact</button>
+        <button onclick="preset('puoskio-spauda',2,'Kreipkites i mano kolege Rasa: rasa@imone.lt, ji tvarko uzsakymus','')" style="background:#fff9c4;color:#f57f17;font-weight:600">👥 REFERRAL</button>
+        <button onclick="preset('ibjoist',2,'Bonjour, quel est le prix pour 500m de poutres en I H-300?','')" style="background:#ffebee;color:#c62828;font-weight:600">🚫 IBJOIST FR (blocked)</button>
     </div>
 
     <button onclick="run()">▶ Generuoti draft'ą</button>
@@ -811,6 +837,43 @@ async def playground_api(request: Request):
             "severity": "crit",
             "event": "📎 Lead atsiunte dokumenta",
             "detail": f"Priedai: {', '.join(simulated_attachments[:5])}. Auto-reply PRALEISTAS - agent'as neskaito PDF/DOCX turinio, todel eskaluoja tau perziurai per Instantly unibox. Draft'as NESIUNCIAMAS.",
+        })
+
+    # 0a. CALL_REQUEST - agent'as negali skambinti, Paulius skambina rankomis
+    if cls.category == "CALL_REQUEST":
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "crit",
+            "event": "📞 Prospect prasyme paskambinti",
+            "detail": "Agent'as NESIUNCIA jokio atsakymo (negali skambinti). Eskalacija Pauliui - jis pats susisiekia telefonu. NIEKO nera issiuncia prospect'ui.",
+        })
+
+    # 0b. WILL_CONTACT - prospect'as pats susisieks, neatsakineti
+    if cls.category == "WILL_CONTACT":
+        notifications.append({
+            "channel": "(nezinutes)",
+            "severity": "info",
+            "event": "✋ Prospect pats susisieks - neatsakau",
+            "detail": "Prospect'as pazadejo pats susisiekti. Agent'as NIEKO nesiuncia ir jokiu notifikaciju tau nebus (tik DB log'as). Jei jis susisieks vel - apdirbsime tada.",
+        })
+
+    # 0c. REFERRAL - klientas nukreipe i kita asmeni
+    if cls.category == "REFERRAL":
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "warn",
+            "event": "👥 REFERRAL - nukreipe i kita zmogu",
+            "detail": "Agent'o draft yra tik mandagus acknowledgment (NE pardavimas). Paulius VISADA turi peziureti - jei pateiktas kito asmens kontaktas, Paulius pats issiusi pilna pasiulyma naujam adresatui.",
+        })
+
+    # 0d. Blocked language (pvz. IBJOIST FR)
+    blocked_langs = [l.lower() for l in (client_config.get("blocked_languages") or [])]
+    if prospect_lang and prospect_lang.lower() in blocked_langs:
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "warn",
+            "event": f"🚫 Blocked kalba: {prospect_lang.upper()}",
+            "detail": f"Sio kliento ({client_id}) konfiguracijoje kalba '{prospect_lang}' uzblokuota - Paulius tvarko rankomis. Agent'as NIEKO nesiuncia.",
         })
 
     # 0. ORDER_PLACED - KRITINE notifikacija (slack+email crit, auto-send blocked)
