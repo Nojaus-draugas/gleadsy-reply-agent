@@ -608,12 +608,8 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         was_sent = False
     else:
         # Auto-detect attachments based on agent reply text + prospect language
-        prospect_lang = "lt"
-        try:
-            from core.language_detection import detect_language
-            prospect_lang = detect_language(reply_text) or "lt"
-        except Exception:
-            prospect_lang = detect_language_from_text(reply_text)
+        # Use simple fallback heuristic (more reliable than langdetect for short LT replies)
+        prospect_lang = detect_language_from_text(reply_text)
 
         try:
             attachments_to_send = detect_attachments(client_config, agent_reply, prospect_lang)

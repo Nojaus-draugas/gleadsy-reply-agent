@@ -103,17 +103,27 @@ def detect_language_from_text(text: str) -> str:
     if not text:
         return "lt"
     t = text.lower()
-    # FR markers
-    fr_words = ["bonjour", "cordialement", "merci", "je vous", "nous avons", "ça", "être", "très", "poutres"]
+    # FR markers (unikalūs FR žodžiai)
+    fr_words = ["bonjour", "cordialement", "merci", "je vous", "nous avons", "être", "très",
+                "poutres", "prix", "ci-joint", "combien", "ça coûte"]
     fr_count = sum(1 for w in fr_words if w in t)
-    # EN markers
-    en_words = ["hi ", "hello", "thanks", "thank you", "pricing", "could you", "please", "regards"]
+    # EN markers - žodžiai + papildomi markeri (hi comma, regards)
+    en_words = ["hello", "thanks", "thank you", "pricing", "could you", "please", "regards",
+                "attaching", "attached", "best regards", "hi,", "hi ", "hi.", " hi", "sincerely"]
     en_count = sum(1 for w in en_words if w in t)
-    # LT markers (charų charakteristika)
+    # LT markers - specifinės LT frazės (nepriklausomai nuo diakritikos)
+    lt_phrases = ["prisegu", "linkejimai", "linkėjimai", "aciu", "ačiū", "sveiki", "kestuti",
+                  "kestuči", "kėstuti", "kainorast", "kainorašt", "kiek kainuoja", "jums",
+                  "mums", "arba", "kad", "taip"]
+    lt_count = sum(1 for w in lt_phrases if w in t)
+    # LT diakritikai - stipriausias signalas
     lt_chars = sum(1 for c in t if c in "ąčęėįšųūž")
 
+    # Prioritetas: FR > LT > EN
     if fr_count >= 2:
         return "fr"
-    if en_count >= 2 and lt_chars == 0:
+    if lt_chars > 0 or lt_count >= 1:
+        return "lt"
+    if en_count >= 1:
         return "en"
-    return "lt"
+    return "lt"  # default
