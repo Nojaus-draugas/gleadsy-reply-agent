@@ -85,6 +85,16 @@ MIGRATIONS = [
     "ALTER TABLE interactions ADD COLUMN cost_usd REAL",
     # 2026-04-21 - pasiulymas ka patobulinti (is quality reviewer'io)
     "ALTER TABLE interactions ADD COLUMN improvement_suggestion TEXT",
+    # 2026-04-23 - foreign-language approval + translation
+    "ALTER TABLE interactions ADD COLUMN original_language TEXT",
+    "ALTER TABLE interactions ADD COLUMN prospect_message_lt TEXT",
+    "ALTER TABLE interactions ADD COLUMN agent_reply_lt TEXT",
+    "ALTER TABLE interactions ADD COLUMN approval_status TEXT",
+    "ALTER TABLE interactions ADD COLUMN approved_at TIMESTAMP",
+    "ALTER TABLE interactions ADD COLUMN approved_by TEXT",
+    "ALTER TABLE interactions ADD COLUMN edit_history TEXT",
+    "ALTER TABLE interactions ADD COLUMN final_sent_text TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_interactions_approval ON interactions(approval_status)",
 ]
 
 
