@@ -66,6 +66,25 @@ async def notify_meeting_booked(lead_email: str, campaign_name: str, time_str: s
     await _send(f"📅 Susitikimas suplanuotas! | {lead_email} | {campaign_name} | Laikas: {time_str}")
 
 
+async def notify_order_placed(
+    lead_email: str,
+    campaign_name: str,
+    client_id: str,
+    prospect_text: str,
+    confidence: float,
+    dashboard_base_url: str = "",
+):
+    """KRITINE notifikacija - prospect'as ka tik uzsake / patvirtino pirkima.
+    Eina tiek slack, tiek email (zr. notify_order_placed_email)."""
+    link = f"\n👉 {dashboard_base_url.rstrip('/')}/pending" if dashboard_base_url else ""
+    await _send(
+        f"🚨🛒 UZSAKYMAS PATVIRTINTAS | {lead_email} | {client_id} | Kampanija: {campaign_name} | "
+        f"Conf: {confidence:.0%}\n"
+        f"> {_preview(prospect_text, 400)}\n"
+        f"⚠️ Draftas LAUKIA tavo approval - NIEKO automatiskai nesiuciama!{link}"
+    )
+
+
 async def notify_error(error_type: str, error_message: str):
     await _send(f"🔴 Klaida | {error_type} | {error_message[:200]}")
 

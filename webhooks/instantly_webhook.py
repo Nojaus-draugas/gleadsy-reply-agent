@@ -6,7 +6,7 @@ from core.classifier import classify_reply, APIUnavailableError, reset_usage_con
 from core.reply_generator import generate_reply, match_faq, parse_time_confirmation, generate_meeting_confirmation
 from core.calendar_manager import get_free_slots, create_meeting_event, format_slots_for_reply
 from core.instantly_client import send_reply, add_to_blocklist, delete_lead_by_email
-from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error, notify_approval_pending
+from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unknown_campaign, notify_meeting_booked, notify_error, notify_approval_pending, notify_order_placed
 from core.self_improver import get_best_examples, get_anti_patterns
 from core.quality_reviewer import review_quality
 from core.hallucination_guard import check_reply as check_hallucinations
@@ -23,7 +23,7 @@ import config
 
 if config.TEST_MODE:
     from core.sheets_logger import log_test_reply
-from core.email_notifier import notify_escalation_email, notify_interested_email
+from core.email_notifier import notify_escalation_email, notify_interested_email, notify_order_placed_email
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,9 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         return {"status": "error", "reason": f"Claude API unavailable: {e}"}
 
     # 9. Below confidence threshold → UNCERTAIN
-    if classification.confidence < confidence_threshold and classification.category not in ("UNSUBSCRIBE", "OUT_OF_OFFICE"):
+    # ORDER_PLACED isimtis - net jei confidence zemesnis, palik kaip ORDER_PLACED ir
+    # force'ink approval'a. Uzsakymai per svarbus kad butu nukelti i UNCERTAIN bucket'a.
+    if classification.confidence < confidence_threshold and classification.category not in ("UNSUBSCRIBE", "OUT_OF_OFFICE", "ORDER_PLACED"):
         classification.category = "UNCERTAIN"
 
     # 10. Route by category
@@ -285,12 +287,17 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
         })
         return {"status": "logged", "reason": "out_of_office"}
 
-    # 11. Categories that get a reply: INTERESTED, QUESTION, NOT_NOW, REFERRAL
+    # 11. Categories that get a reply: ORDER_PLACED, INTERESTED, QUESTION, NOT_NOW, REFERRAL
     # Detect language and resolve approval setting
     campaign_lang_hint = get_campaign_language({client_id: client_config}, campaign_id) \
                          or client_config.get("tone", {}).get("language", "lt")
     original_language = detect_language(reply_text, campaign_lang_hint)
     approval_required = bool(client_config.get("approval_required", False))
+
+    # ORDER_PLACED visada force'ina approval - uzsakymai niekada neina automatiskai.
+    # Paulius turi peziureti detales (kiekis, adresas, saskaita) pries siuntima.
+    if classification.category == "ORDER_PLACED":
+        approval_required = True
 
     few_shots = await get_best_examples(db, classification.category, client_id,
                                          limit=3, language=original_language)
@@ -587,6 +594,35 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             original_language=original_language,
             dashboard_base_url=config.DASHBOARD_BASE_URL,
         )
+
+        # ORDER_PLACED - papildomai siunciame KRITINE notifikacija (slack+email crit)
+        # virs standartines approval_pending. Uzsakymai per svarbus kad butu tik
+        # eileje tarp kitu draftu.
+        if classification.category == "ORDER_PLACED":
+            try:
+                await notify_order_placed(
+                    lead_email=lead_email,
+                    campaign_name=payload.get("campaign_name", ""),
+                    client_id=client_id,
+                    prospect_text=reply_text,
+                    confidence=classification.confidence,
+                    dashboard_base_url=config.DASHBOARD_BASE_URL,
+                )
+            except Exception as e:
+                logger.error(f"notify_order_placed (slack) failed: {e}")
+            try:
+                notify_order_placed_email(
+                    lead_email=lead_email,
+                    client_id=client_id,
+                    campaign_name=payload.get("campaign_name", ""),
+                    original_message=reply_text,
+                    generated_reply=agent_reply,
+                    confidence=classification.confidence,
+                    interaction_id=iid,
+                )
+            except Exception as e:
+                logger.error(f"notify_order_placed_email failed: {e}")
+
         return {"status": "pending_approval", "interaction_id": iid}
 
     # 13. Send via Instantly (or log to Sheets in TEST_MODE)

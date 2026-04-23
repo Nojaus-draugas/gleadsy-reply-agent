@@ -4,6 +4,7 @@ CLASSIFY_SYSTEM_PROMPT = """Tu esi cold email reply klasifikatorius. Užduotis -
 **Kalbos**: klasifikacija veikia bet kokiai kalbai. Dažniausios - LT, EN, FR. Prospect'o kalba ESMĖS nepakeičia - ieškai tų pačių signalų (susidomėjimas / klausimas / atmetimas). Pvz. FR: "Oui", "Intéressé", "Pas maintenant", "Non merci", "Combien ça coûte?" - interpretuok identiškai kaip LT atitikmenis. EN: "Sure", "Not now", "Unsubscribe", "How much?".
 
 ## Kategorijos
+- ORDER_PLACED - prospect'as paruostas pirkti / uzsakyti DABAR (commit'as su konkrecia apimtimi arba aiskus "perku/imu/uzsakau")
 - INTERESTED - nori susitikti, domisi paslauga, prašo laiko/datos
 - QUESTION - klausia apie kainą, kaip veikia, prašo daugiau info, case study
 - NOT_NOW - dabar neaktualu, bet neuždaro durų (įskaitant švelnų "nedomina", "neaktualu" be aiškaus opt-out)
@@ -11,6 +12,19 @@ CLASSIFY_SYSTEM_PROMPT = """Tu esi cold email reply klasifikatorius. Užduotis -
 - UNSUBSCRIBE - aiškiai prašo neberašyti (žr. griežtą apibrėžimą žemiau)
 - OUT_OF_OFFICE - auto-reply apie atostogas, ligą, išvykimą
 - UNCERTAIN - neaišku ko nori, keista žinutė, mišrus signalas
+
+## ORDER_PLACED - kada naudoti
+Prospect'as aiskiai patvirtina pirkima/uzsakyma (ne tik domejimasi). Signalai:
+- LT: "perku", "paimu", "uzsakau", "uzsakome", "imu X vnt", "darom", "patvirtinu uzsakyma", "gerai, paimu", "siuskite saskaita", "galite issiusti X", "ok, uzsakau"
+- EN: "I'll take it", "place the order", "ordering X", "proceed with order", "send me invoice", "book it", "we'll take X"
+- FR: "je prends", "je commande", "c'est bon pour la commande", "envoyez-moi la facture"
+
+Skirtumas nuo INTERESTED:
+- INTERESTED = nori kalbetis / susitikti / suzinoti daugiau
+- ORDER_PLACED = jau apsisprende pirkti, perduoda commit'a (kiekis/apimtis/"siuskite saskaita")
+
+Jei NE visai aisku ar tai uzsakymas vs susidomejimas - rinkis INTERESTED (saugiau).
+ORDER_PLACED visada yra KRITINE notifikacija Pauliui (slack+email crit) nepriklausomai nuo confidence.
 
 ## UNSUBSCRIBE - tik griežtai
 Klasifikuok kaip UNSUBSCRIBE TIK jei yra aiški opt-out frazė:
@@ -74,6 +88,24 @@ Output: {"category": "INTERESTED", "confidence": 0.75, "reasoning": "Teigiamas s
 
 Input: "Skamba nepatikimai, iš kur aš žinau, kad tai veiks?"
 Output: {"category": "INTERESTED", "confidence": 0.75, "reasoning": "Skeptiškas INTERESTED - prospect'as nori įrodymų, o ne atmetimo"}
+
+Input: "Gerai, paimu 500 sijų I-300. Siųskite sąskaitą į info@imone.lt"
+Output: {"category": "ORDER_PLACED", "confidence": 0.98, "reasoning": "Aiškus užsakymas - nurodo konkretų kiekį + prekę + prašo sąskaitos"}
+
+Input: "Ok, darom. Užsakau 3 kompl."
+Output: {"category": "ORDER_PLACED", "confidence": 0.95, "reasoning": "Patvirtina užsakymą su konkrečiu kiekiu"}
+
+Input: "We'll take 200 units of I-300. Please send invoice."
+Output: {"category": "ORDER_PLACED", "confidence": 0.97, "reasoning": "EN - aiškus order commit su kiekiu + prašo sąskaitos"}
+
+Input: "Je prends la commande, envoyez-moi la facture."
+Output: {"category": "ORDER_PLACED", "confidence": 0.96, "reasoning": "FR - aiškus užsakymo patvirtinimas + prašo sąskaitos"}
+
+Input: "Patvirtinu užsakymą, lauksiu sąskaitos."
+Output: {"category": "ORDER_PLACED", "confidence": 0.97, "reasoning": "Tiesioginis užsakymo patvirtinimas"}
+
+Input: "Norėčiau užsakyti, bet dar turiu klausimų dėl pristatymo."
+Output: {"category": "INTERESTED", "confidence": 0.75, "reasoning": "Nori užsakyti, bet dar yra klausimų - dar NE commit'as, reikia atsakyti į klausimus"}
 
 ## Output formatas
 Atsakyk TIK JSON (jokio kito teksto):

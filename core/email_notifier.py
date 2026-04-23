@@ -81,6 +81,49 @@ def notify_interested_email(lead_email: str, client_id: str, original_message: s
     send_email_notification(subject, body)
 
 
+def notify_order_placed_email(lead_email: str, client_id: str, campaign_name: str,
+                              original_message: str, generated_reply: str, confidence: float,
+                              interaction_id: int | None = None):
+    """KRITINE notifikacija - prospect'as patvirtino uzsakyma. Visada siunciama email'u."""
+    subject = f"🚨🛒 Gleadsy: UZSAKYMAS patvirtintas - {lead_email}"
+    link = f"{config.DASHBOARD_BASE_URL}/pending"
+    if interaction_id:
+        link = f"{config.DASHBOARD_BASE_URL}/pending#draft-{interaction_id}"
+    body = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #c62828; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0;">🚨🛒 UŽSAKYMAS PATVIRTINTAS</h2>
+            <p style="margin: 5px 0 0 0; opacity: 0.9;">Prospektas įsipareigojo pirkti - reikia tavo veiksmų</p>
+        </div>
+        <div style="background: #fff; padding: 20px; border: 1px solid #eee; border-top: none;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Lead:</td>
+                    <td style="padding: 8px;"><strong>{lead_email}</strong></td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Klientas:</td>
+                    <td style="padding: 8px;">{client_id}</td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Kampanija:</td>
+                    <td style="padding: 8px;">{campaign_name}</td></tr>
+                <tr><td style="padding: 8px; font-weight: bold; color: #555;">Confidence:</td>
+                    <td style="padding: 8px;">{confidence:.0%}</td></tr>
+            </table>
+            <h3 style="color: #c62828; margin-top: 20px;">Lead parašė:</h3>
+            <div style="background: #fff3e0; padding: 15px; border-radius: 8px; border-left: 4px solid #e65100; white-space: pre-wrap;">{original_message}</div>
+            <h3 style="color: #333; margin-top: 20px;">Sugeneruotas draft atsakymas:</h3>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #666; white-space: pre-wrap;">{generated_reply}</div>
+            <div style="margin-top: 25px; padding: 15px; background: #ffebee; border-radius: 8px;">
+                <strong>⚠️ DRAFT NESIUNCIAMAS AUTOMATISKAI</strong><br>
+                Laukia tavo approval - turi peržiūrėti, pakoreguoti ir tik tada patvirtinti siuntimą.<br>
+                Paprastai užsakymams reikia: patvirtinti detales, išsiųsti sąskaitą, sutarti pristatymą.
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <a href="{link}" style="display: inline-block; padding: 14px 28px; background: #c62828; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Atidaryti draft</a>
+            </div>
+        </div>
+    </div>
+    """
+    send_email_notification(subject, body)
+
+
 def notify_unknown_question_email(lead_email: str, client_id: str, question: str, interaction_id: int):
     """Notify about question that FAQ can't answer. Ask human for answer."""
     subject = f"❓ Gleadsy: nežinomas klausimas - {lead_email}"

@@ -646,6 +646,9 @@ button:disabled {{ background: #999; }}
         <button onclick="preset('puoskio-spauda',2,'Per brangu. Radom pigiau po 4 eur/vnt.','')">Budget pushback</button>
         <button onclick="preset('gleadsy',1,'Hi, thanks for your message. Tell me more about pricing.','')">EN prospect</button>
         <button onclick="preset('ibjoist',2,'Combien ça coûte par mètre pour 500m H-300?','')">FR kaina</button>
+        <button onclick="preset('ibjoist',3,'Gerai, paimu 500 sijų I-300. Siųskite sąskaitą info@imone.lt','')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 LT Užsakymas</button>
+        <button onclick="preset('ibjoist',3,&quot;We'll take 200 units of I-300. Please send invoice.&quot;,'')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 EN Order</button>
+        <button onclick="preset('puoskio-spauda',3,'Ok, darom. Užsakau 300 marškinėlių. Sąskaitą į buhalterija@imone.lt','')" style="background:#ffebee;color:#c62828;font-weight:600">🛒 Puoškio order</button>
     </div>
 
     <button onclick="run()">▶ Generuoti draft'ą</button>
@@ -777,8 +780,18 @@ async def playground_api(request: Request):
     notifications = []
     conf_threshold = config.CONFIDENCE_THRESHOLD
 
+    # 0. ORDER_PLACED - KRITINE notifikacija (slack+email crit, auto-send blocked)
+    if cls.category == "ORDER_PLACED":
+        notifications.append({
+            "channel": "slack+email",
+            "severity": "crit",
+            "event": "🚨🛒 UZSAKYMAS patvirtintas",
+            "detail": f"Prospect'as paruostas pirkti (conf {cls.confidence:.0%}). Draftas NESIUNCIAMAS automatiskai - force'inu approval. Tau ateis slack crit + email su VISA info (lead, kampanija, draft, link i dashboard).",
+        })
+
     # 1. UNCERTAIN arba low confidence -> escalation
-    if cls.category == "UNCERTAIN" or cls.confidence < conf_threshold:
+    # (ORDER_PLACED isimtis - net prie low confidence neperverciamas i UNCERTAIN)
+    if (cls.category == "UNCERTAIN" or cls.confidence < conf_threshold) and cls.category != "ORDER_PLACED":
         notifications.append({
             "channel": "slack+email",
             "severity": "warn",
@@ -864,8 +877,8 @@ async def playground_api(request: Request):
             "detail": f"Native priedas (ne URL): {', '.join(attachment_names)}",
         })
 
-    # 9. Reply sent (success path)
-    if not notifications or all(n["severity"] == "info" for n in notifications):
+    # 9. Reply sent (success path) - neskaitant ORDER_PLACED (ten approval queue, o ne auto-send)
+    if (not notifications or all(n["severity"] == "info" for n in notifications)) and cls.category != "ORDER_PLACED":
         if cls.category not in ("UNSUBSCRIBE", "OUT_OF_OFFICE", "UNCERTAIN"):
             notifications.append({
                 "channel": "slack",
