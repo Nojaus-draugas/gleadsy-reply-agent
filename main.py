@@ -361,6 +361,228 @@ async def logout():
     return response
 
 
+@app.get("/notifications")
+async def notifications_page(request: Request):
+    """Pilnas žemėlapis kada Paulius informuojamas + test mygtukai."""
+    from fastapi.responses import HTMLResponse
+    if not _get_dashboard_session(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    # Recent escalations from DB
+    cursor = await db.execute(
+        "SELECT created_at, lead_email, classification, classification_reasoning "
+        "FROM interactions WHERE classification_reasoning LIKE '%eskal%' OR classification = 'UNCERTAIN' "
+        "ORDER BY created_at DESC LIMIT 10"
+    )
+    recent = [dict(r) for r in await cursor.fetchall()]
+    import html as h
+    recent_rows = "".join(
+        f'<tr><td>{h.escape(str(r.get("created_at","")))}</td>'
+        f'<td>{h.escape(r.get("lead_email",""))}</td>'
+        f'<td><span class="cls">{h.escape(r.get("classification",""))}</span></td>'
+        f'<td class="reason">{h.escape((r.get("classification_reasoning") or "")[:180])}</td></tr>'
+        for r in recent
+    ) or '<tr><td colspan="4" style="text-align:center;color:#888">(nėra įrašų)</td></tr>'
+
+    slack_status = "✅ sukonfigūruota" if config.SLACK_WEBHOOK_URL else "❌ SLACK_WEBHOOK_URL tuščias"
+    email_status = "✅ sukonfigūruota" if config.NOTIFY_EMAIL else "❌ NOTIFY_EMAIL tuščias"
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Eskalacijos</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; max-width: 1100px; margin: 30px auto; padding: 20px; background: #f5f5f5; color: #333; }}
+h1 {{ color: #1565c0; }}
+h2 {{ margin-top: 28px; color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 6px; font-size: 18px; }}
+.back {{ color: #4285f4; text-decoration: none; font-size: 14px; }}
+.card {{ background: white; padding: 18px 22px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 14px; }}
+.status-row {{ display: flex; gap: 16px; margin-bottom: 16px; }}
+.status-pill {{ padding: 8px 14px; border-radius: 8px; background: white; font-size: 13px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+th {{ background: #1565c0; color: white; padding: 10px 14px; text-align: left; font-size: 13px; }}
+td {{ padding: 10px 14px; border-top: 1px solid #e0e0e0; font-size: 13px; vertical-align: top; }}
+.chan-slack {{ color: #611f69; background: #f4ede4; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }}
+.chan-email {{ color: #1565c0; background: #e3f2fd; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }}
+.chan-both {{ color: #e65100; background: #fff3e0; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }}
+.severity-crit {{ color: #c62828; font-weight: 700; }}
+.severity-warn {{ color: #e65100; font-weight: 600; }}
+.severity-info {{ color: #2e7d32; }}
+.cls {{ display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #f9a825; color: white; }}
+.reason {{ color: #666; font-size: 12px; }}
+button {{ padding: 10px 18px; background: #1565c0; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-right: 8px; }}
+button:hover {{ background: #0d47a1; }}
+button:disabled {{ background: #aaa; }}
+#testResult {{ margin-top: 12px; padding: 10px 14px; border-radius: 6px; font-size: 13px; display: none; }}
+</style></head><body>
+<a href="/replies" class="back">&larr; Grįžti į dashboard</a>
+<h1>🔔 Eskalacijos</h1>
+<p style="color:#666">Pilnas žemėlapis kada ir kur būsi informuotas apie reply agent'o įvykius.</p>
+
+<div class="status-row">
+    <div class="status-pill">Slack: {slack_status}</div>
+    <div class="status-pill">Email: {email_status}</div>
+</div>
+
+<h2>📢 Real-time įvykiai (per kiekvieną webhook)</h2>
+<table>
+    <tr><th>Kada</th><th>Kur</th><th>Sąlyga</th><th>Svarba</th></tr>
+
+    <tr><td><strong>Reply išsiųsta</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Kiekvieną kartą, kai agent sėkmingai siūsiu atsakymą per Instantly</td>
+        <td><span class="severity-info">info</span></td></tr>
+
+    <tr><td><strong>INTERESTED lead gautas</strong></td><td><span class="chan-email">Email</span></td>
+        <td>Prospect'as klasifikuotas kaip INTERESTED, draft paruoštas</td>
+        <td><span class="severity-info">info</span> (naujas hot lead)</td></tr>
+
+    <tr><td><strong>Meeting booked</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Prospect'as patvirtino konkretų laiką, Google Calendar event sukurtas</td>
+        <td><span class="severity-info">info</span> 🎉</td></tr>
+
+    <tr><td><strong>UNCERTAIN klasifikacija</strong></td><td><span class="chan-both">Slack + Email</span></td>
+        <td>LLM nežino kaip klasifikuoti arba confidence &lt; {config.CONFIDENCE_THRESHOLD:.0%} (tu turi peržiūrėti)</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>Quality gate failed</strong></td><td><span class="chan-both">Slack + Email</span></td>
+        <td>Quality reviewer'is įvertino &lt; 7/10 (hallucination, netinkamas tonas, ir t.t.)</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>FAQ no match</strong></td><td><span class="chan-email">Email</span></td>
+        <td>QUESTION kategorija, bet joks FAQ neatitinka (tu atsakai rankomis, FAQ automatiškai pridedamas)</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>UNSUBSCRIBE auto-action</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Prospect'as atsisakė (conf ≥ 0.85) - auto blocklist + delete lead</td>
+        <td><span class="severity-info">info</span></td></tr>
+
+    <tr><td><strong>Unknown campaign</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Gautas webhook, bet campaign_id neregistruotas klientų YAML'uose</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>Max replies reached (5/thread)</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Thread'e jau 5 atsakymai, toliau nesunt'iniama (escalate manual)</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>Meeting patvirtinimas neaiškus</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Atrodo kad prospect patvirtino laiką, bet agent'as neturi aiškumo</td>
+        <td><span class="severity-warn">warn</span></td></tr>
+
+    <tr><td><strong>Claude API down</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Anthropic API nepasiekiamas (classifier, reply gen, time parse)</td>
+        <td><span class="severity-crit">KRITIŠKA</span></td></tr>
+
+    <tr><td><strong>Instantly send failed</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Atsakymas sugeneruotas, bet nepavyko išsiūsti per Instantly API</td>
+        <td><span class="severity-crit">KRITIŠKA</span></td></tr>
+
+    <tr><td><strong>Hallucination aptikta</strong></td><td><span class="chan-both">Slack + Email</span></td>
+        <td>Agent atsakyme yra telefonų/emails/URL'ų/kainų kurių nėra brief'e (quality fail + escalate)</td>
+        <td><span class="severity-crit">KRITIŠKA</span></td></tr>
+</table>
+
+<h2>📅 Periodiniai digests</h2>
+<table>
+    <tr><th>Kada</th><th>Kanalas</th><th>Turinys</th></tr>
+    <tr><td>Kasdien <strong>08:00</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Mokymosi suvestinė: 24h interactions, nauji few-shots, Pauliaus stiliaus signalai</td></tr>
+    <tr><td>Kasdien <strong>20:00</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Vakarinė suvestinė (tas pats formatas kaip 08:00)</td></tr>
+    <tr><td>Kasdien <strong>10:06</strong></td><td><span class="chan-both">Claude chat</span></td>
+        <td>Claude automatiškai pateikia detalų update'ą šiame chat'e (scheduled task)</td></tr>
+    <tr><td>Pirmadieniais <strong>09:00</strong></td><td><span class="chan-slack">Slack</span></td>
+        <td>Weekly digest: savaitės stats, konversija, top outcomes</td></tr>
+    <tr><td>Sekmadieniais <strong>23:00</strong></td><td>(vidinis)</td>
+        <td>Confidence calibrator - auto-adjust threshold pagal savaitės thumbs_up/down</td></tr>
+    <tr><td>Kas 30 min</td><td><span class="chan-slack">Slack</span> (tik jei silence)</td>
+        <td>Webhook silence monitor - jei 6+h nieks neatėjo (business hours)</td></tr>
+    <tr><td>Kas 1 val</td><td><span class="chan-slack">Slack</span> (tik jei klaida)</td>
+        <td>Health monitor - DB + API keys + Slack webhook availability</td></tr>
+    <tr><td>Kas 15 min</td><td>(vidinis)</td>
+        <td>Auto-learn - traukia Pauliaus naujus atsakymus iš Instantly, pridedi kaip few-shots</td></tr>
+</table>
+
+<h2>🧪 Testai - patikrink ar veikia</h2>
+<div class="card">
+    <button onclick="testNotif('slack')">Test Slack</button>
+    <button onclick="testNotif('email')">Test Email</button>
+    <button onclick="testNotif('all')">Test Viską</button>
+    <div id="testResult"></div>
+</div>
+
+<h2>🚨 Paskutinės eskalacijos (iš DB)</h2>
+<table>
+    <tr><th>Data</th><th>Lead</th><th>Kategorija</th><th>Priežastis</th></tr>
+    {recent_rows}
+</table>
+
+<script>
+async function testNotif(which) {{
+    const out = document.getElementById('testResult');
+    out.style.display = 'block';
+    out.style.background = '#fff3e0'; out.style.color = '#e65100';
+    out.textContent = 'Siunčiama...';
+    try {{
+        const r = await fetch('/api/test_notification', {{
+            method: 'POST', headers: {{'Content-Type':'application/json'}},
+            body: JSON.stringify({{channel: which}})
+        }});
+        const d = await r.json();
+        if (d.ok) {{
+            out.style.background = '#e8f5e9'; out.style.color = '#2e7d32';
+            out.innerHTML = '✅ ' + (d.message || 'Sėkmingai išsiųsta') + (d.details ? '<br><pre style="font-size:11px">' + JSON.stringify(d.details, null, 2) + '</pre>' : '');
+        }} else {{
+            out.style.background = '#ffebee'; out.style.color = '#c62828';
+            out.textContent = '❌ Klaida: ' + (d.error || 'nežinoma');
+        }}
+    }} catch(e) {{
+        out.style.background = '#ffebee'; out.style.color = '#c62828';
+        out.textContent = '❌ ' + e.message;
+    }}
+}}
+</script>
+
+<a href="/replies" class="back" style="margin-top:20px;display:inline-block">&larr; Grįžti į dashboard</a>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/api/test_notification")
+async def test_notification(request: Request):
+    """Siunčia test notifikaciją (Slack arba email), kad Paulius patikrintų ar veikia."""
+    from fastapi.responses import JSONResponse
+    if not _get_dashboard_session(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    body = await request.json()
+    channel = body.get("channel", "slack")
+    results = {}
+
+    if channel in ("slack", "all"):
+        try:
+            from core.slack_notifier import notify_error
+            await notify_error("test_notification", "🧪 Test iš /notifications puslapio - jei matai šitą Slack'e, notifikacijos veikia!")
+            results["slack"] = "ok"
+        except Exception as e:
+            results["slack"] = f"error: {e}"
+
+    if channel in ("email", "all"):
+        try:
+            from core.email_notifier import notify_escalation_email
+            notify_escalation_email(
+                "test@example.com", "test-client", "TEST",
+                1.0, "Test message from notifications page", "Test eskalacija - ignore"
+            )
+            results["email"] = f"ok (siusta į {config.NOTIFY_EMAIL})"
+        except Exception as e:
+            results["email"] = f"error: {e}"
+
+    any_ok = any(v == "ok" or v.startswith("ok") for v in results.values())
+    return JSONResponse({
+        "ok": any_ok,
+        "message": "Test notifikacija išsiųsta - patikrink Slack/email",
+        "details": results,
+    })
+
+
 @app.get("/playground")
 async def playground_page(request: Request):
     """Playground - test agent'o atsakymus be siuntimo. Pauliaus sandbox."""
@@ -952,7 +1174,8 @@ tr:hover {{ background: #f0f7ff; }}
     <div style="display:flex;gap:8px;align-items:center">
         {pending_badge_html}
         <a href="/playground" style="padding:8px 14px;background:#2e7d32;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎮 Playground</a>
-        <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymosi progresas</a>
+        <a href="/notifications" style="padding:8px 14px;background:#e65100;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🔔 Eskalacijos</a>
+        <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymasis</a>
         <form method="POST" action="/logout" style="margin:0">
             <button type="submit" class="logout-btn">Atsijungti</button>
         </form>
