@@ -17,6 +17,8 @@ import config
 from core.client_loader import load_clients
 from core.translation import translate_to_lt, rewrite_draft
 from core.instantly_client import send_reply
+from core.hallucination_guard import check_reply as check_hallucinations
+from core.quality_reviewer import review_quality
 from db.database import (
     init_db, update_rating, set_human_takeover, get_weekly_stats,
     get_pending_drafts, get_pending_count, update_approval_status,
@@ -1206,6 +1208,7 @@ h1 {{ color: #333; margin: 0 0 8px 0; }}
         <pre id="editResultOrig"></pre>
       </div>
     </div>
+      <div id="editQualityInfo" style="margin-top:12px;padding:10px;border-radius:6px;font-size:12px"></div>
   </div>
 
   <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
@@ -1282,6 +1285,24 @@ async function runRewrite() {{
   document.getElementById('saveAndSendBtn').style.display = 'inline-block';
   document.getElementById('reply-lt-' + currentEditIid).innerText = body.agent_reply_lt || '';
   document.getElementById('reply-orig-' + currentEditIid).innerText = body.agent_reply || '';
+
+  // Quality + hallucination info
+  const qInfo = document.getElementById('editQualityInfo');
+  const score = body.quality_score;
+  const halluc = body.hallucination_issues || [];
+  let parts = [];
+  if (score !== null && score !== undefined) {{
+    const color = score >= 8 ? '#2e7d32' : (score >= 6 ? '#e65100' : '#c62828');
+    const bg = score >= 8 ? '#e8f5e9' : (score >= 6 ? '#fff3e0' : '#ffebee');
+    qInfo.style.background = bg;
+    qInfo.style.color = color;
+    parts.push('<strong>Quality: ' + score + '/10</strong> - ' + (body.quality_summary || ''));
+  }}
+  if (halluc.length > 0) {{
+    parts.push('<div style="margin-top:6px;color:#c62828"><strong>&#9888;&#65039; Hallucination:</strong> ' + halluc.join('; ') + '</div>');
+  }}
+  qInfo.innerHTML = parts.join('');
+  qInfo.style.display = parts.length ? 'block' : 'none';
 }}
 async function saveAndSend() {{
   const res = await post('/api/approve/' + currentEditIid);
@@ -1387,7 +1408,8 @@ async def api_edit_draft(iid: int, request: Request):
         raise HTTPException(status_code=400, detail="lt_instruction required")
 
     cursor = await db.execute(
-        "SELECT agent_reply, original_language, client_id, campaign_id, approval_status "
+        "SELECT agent_reply, original_language, client_id, campaign_id, approval_status, "
+        "prospect_message, classification "
         "FROM interactions WHERE id = ?",
         (iid,),
     )
@@ -1407,6 +1429,7 @@ async def api_edit_draft(iid: int, request: Request):
 
     before = row["agent_reply"] or ""
     target_lang = row["original_language"] or client_config.get("tone", {}).get("language", "lt")
+
     try:
         new_draft = await rewrite_draft(
             original_draft=before,
@@ -1420,15 +1443,51 @@ async def api_edit_draft(iid: int, request: Request):
 
     new_draft_lt = await translate_to_lt(new_draft, target_lang)
 
+    # Re-check quality + hallucinations on the edited draft (informational, non-blocking)
+    hallucination_issues = check_hallucinations(new_draft, client_config)
+    try:
+        quality = await review_quality(
+            prospect_message=row["prospect_message"],
+            classification=row["classification"],
+            generated_reply=new_draft,
+            client_name=client_config.get("client_name", row["client_id"]),
+        )
+        quality_score = quality.score
+        quality_summary = quality.summary
+        quality_issues = list(quality.issues) if quality.issues else []
+    except Exception as e:
+        logger.warning("Quality review failed on edited draft iid=%s: %s", iid, e)
+        quality_score = None
+        quality_summary = f"Quality review error: {e}"
+        quality_issues = []
+
+    # Persist new draft + refreshed quality values
     await update_draft_text(db, iid, new_draft, new_draft_lt)
+    await db.execute(
+        "UPDATE interactions SET quality_score = ?, quality_summary = ?, quality_issues = ? "
+        "WHERE id = ?",
+        (quality_score, quality_summary,
+         json.dumps(quality_issues, ensure_ascii=False), iid),
+    )
+    await db.commit()
     await append_edit_history(db, iid, {
         "lt_instruction": lt_instruction,
         "before": before,
         "after": new_draft,
         "before_lt": "",
         "after_lt": new_draft_lt,
+        "new_quality_score": quality_score,
+        "new_hallucination_count": len(hallucination_issues),
     })
-    return {"agent_reply": new_draft, "agent_reply_lt": new_draft_lt}
+
+    return {
+        "agent_reply": new_draft,
+        "agent_reply_lt": new_draft_lt,
+        "quality_score": quality_score,
+        "quality_summary": quality_summary,
+        "quality_issues": quality_issues,
+        "hallucination_issues": hallucination_issues,
+    }
 
 
 @app.get("/answer/{interaction_id}")

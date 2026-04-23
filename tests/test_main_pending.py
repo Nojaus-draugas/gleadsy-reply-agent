@@ -132,7 +132,12 @@ async def test_edit_draft_rewrites_and_saves(client_with_db):
     client, db = client_with_db
     iid = await _seed_pending(db)
     with patch("main.rewrite_draft", new=AsyncMock(return_value="Merci! Quand?")) as mock_r, \
-         patch("main.translate_to_lt", new=AsyncMock(return_value="Ačiū! Kada?")):
+         patch("main.translate_to_lt", new=AsyncMock(return_value="Ačiū! Kada?")), \
+         patch("main.review_quality", new=AsyncMock(return_value=type("Q", (), {
+             "score": 8, "passed": True, "issues": [], "summary": "ok",
+             "improvement_suggestion": "",
+         })())), \
+         patch("main.check_hallucinations", return_value=[]):
         # Need to seed a client config into main.clients for the endpoint
         main.clients["gleadsy_fr"] = {
             "client_id": "gleadsy_fr", "client_name": "Gleadsy FR",
@@ -158,6 +163,83 @@ async def test_edit_draft_rewrites_and_saves(client_with_db):
     history = json.loads(row["edit_history"])
     assert len(history) == 1
     assert history[0]["lt_instruction"] == "Pridėk klausimą"
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_reruns_quality_and_hallucination_checks(client_with_db):
+    client, db = client_with_db
+    iid = await _seed_pending(db)
+
+    # Mock Claude rewrite + translate + quality review + hallucination guard
+    fake_quality = type("Q", (), {
+        "score": 7, "passed": True,
+        "issues": ["shortened a sentence"], "summary": "decent rewrite",
+        "improvement_suggestion": "",
+    })()
+
+    with patch("main.rewrite_draft", new=AsyncMock(return_value="Nouveau texte")), \
+         patch("main.translate_to_lt", new=AsyncMock(return_value="Naujas tekstas")), \
+         patch("main.review_quality", new=AsyncMock(return_value=fake_quality)) as mock_qr, \
+         patch("main.check_hallucinations", return_value=[]) as mock_halluc:
+        main.clients["gleadsy_fr"] = {
+            "client_id": "gleadsy_fr", "client_name": "Gleadsy FR",
+            "tone": {"language": "fr", "sign_off": "Cordialement", "sender_name": "P",
+                     "personality": "x"},
+            "approval_required": True,
+        }
+        r = await client.post(f"/api/edit_draft/{iid}",
+                               json={"lt_instruction": "Pakeisk"})
+
+    assert r.status_code == 200
+    body = r.json()
+    # Response must include the new quality score + summary
+    assert body["quality_score"] == 7
+    assert body["quality_summary"] == "decent rewrite"
+    assert body["hallucination_issues"] == []
+
+    # Both checks were called
+    mock_qr.assert_called_once()
+    mock_halluc.assert_called_once()
+
+    # DB row must reflect new quality values
+    cursor = await db.execute(
+        "SELECT quality_score, quality_summary FROM interactions WHERE id = ?", (iid,)
+    )
+    row = dict(await cursor.fetchone())
+    assert row["quality_score"] == 7
+    assert row["quality_summary"] == "decent rewrite"
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_surfaces_hallucination_issues(client_with_db):
+    client, db = client_with_db
+    iid = await _seed_pending(db)
+    fake_quality = type("Q", (), {
+        "score": 3, "passed": False,
+        "issues": ["hallucinated phone"], "summary": "invented phone number",
+        "improvement_suggestion": "",
+    })()
+
+    with patch("main.rewrite_draft", new=AsyncMock(return_value="Call me at +37061111111")), \
+         patch("main.translate_to_lt", new=AsyncMock(return_value="Skambink")), \
+         patch("main.review_quality", new=AsyncMock(return_value=fake_quality)), \
+         patch("main.check_hallucinations", return_value=["phone +37061111111 not in brief"]):
+        main.clients["gleadsy_fr"] = {
+            "client_id": "gleadsy_fr", "client_name": "Gleadsy FR",
+            "tone": {"language": "fr", "sign_off": "Cordialement", "sender_name": "P",
+                     "personality": "x"},
+            "approval_required": True,
+        }
+        r = await client.post(f"/api/edit_draft/{iid}",
+                               json={"lt_instruction": "Pridėk telefoną"})
+    assert r.status_code == 200
+    body = r.json()
+    # Even though quality failed, we DON'T block - we surface info
+    assert body["quality_score"] == 3
+    assert body["hallucination_issues"] == ["phone +37061111111 not in brief"]
+    # Draft was still saved (user decides)
+    cursor = await db.execute("SELECT agent_reply FROM interactions WHERE id = ?", (iid,))
+    assert (await cursor.fetchone())["agent_reply"] == "Call me at +37061111111"
 
 
 @pytest.mark.asyncio
