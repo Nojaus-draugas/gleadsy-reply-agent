@@ -459,6 +459,8 @@ async function run() {{
                         <strong>Quality:</strong> ${{q.score || '-'}}/10 - ${{q.summary || '-'}}<br>
                         ${{q.improvement_suggestion ? '<strong>Ką patobulinti:</strong> ' + q.improvement_suggestion + '<br>' : ''}}
                         <strong>Few-shots panaudoti:</strong> ${{d.few_shots_count}}<br>
+                        <strong>Aptikta kalba:</strong> ${{d.detected_language || '-'}}<br>
+                        <strong>📎 Priedai (būtų prisegta):</strong> ${{(d.attachments_would_be_sent || []).length ? d.attachments_would_be_sent.join(', ') : 'jokių'}}<br>
                         <strong>Cost:</strong> $${{d.cost_usd.toFixed(4)}}
                     </div>
                 </div>`;
@@ -519,6 +521,17 @@ async def playground_api(request: Request):
         return JSONResponse({"error": str(e)})
 
     usage = get_usage_snapshot()
+
+    # Detect attachments that WOULD be sent (for playground preview)
+    try:
+        from core.attachments import detect_attachments, detect_language_from_text
+        prospect_lang = detect_language_from_text(prospect)
+        attachments_preview = detect_attachments(client_config, reply, prospect_lang)
+        attachment_names = [a.get("name") for a in attachments_preview]
+    except Exception:
+        attachment_names = []
+        prospect_lang = "lt"
+
     return JSONResponse({
         "reply": reply,
         "classification": cls.category,
@@ -532,6 +545,8 @@ async def playground_api(request: Request):
         },
         "few_shots_count": len(fs),
         "cost_usd": usage.get("cost_usd", 0),
+        "detected_language": prospect_lang,
+        "attachments_would_be_sent": attachment_names,
     })
 
 
