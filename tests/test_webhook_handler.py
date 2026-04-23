@@ -174,3 +174,97 @@ async def test_cooldown_blocks_reply(db, mock_clients):
     result = await handle_instantly_webhook(payload2, db, mock_clients, 0.7)
     assert result["status"] == "ignored"
     assert result["reason"] == "cooldown active"
+
+
+@pytest.fixture
+def fr_clients():
+    return {
+        "gleadsy_fr": {
+            "client_id": "gleadsy_fr", "client_name": "Gleadsy FR",
+            "approval_required": True,
+            "campaigns": [
+                {"id": "campaign-fr-uuid", "language": "fr", "name": "FR outreach"},
+            ],
+            "company_description": "Digital marketing", "service_offering": "Cold email",
+            "value_proposition": "5 rendez-vous qualifiés", "pricing": "800€/mois",
+            "target_audience": "B2B",
+            "meeting": {
+                "participant_from_client": "Paulius", "purpose": "Consultation",
+                "duration_minutes": 30, "google_calendar_id": "primary",
+                "working_hours": {"start": "09:00", "end": "17:00",
+                                   "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]},
+                "buffer_minutes": 15, "advance_days": 7, "slots_to_offer": 3,
+            },
+            "faq": [{"question": "Prix?", "answer": "Individuel"}],
+            "boundaries": {"cannot_promise": [], "escalate_topics": []},
+            "tone": {"formality": "semi-formal", "addressing": "vous", "language": "fr",
+                     "personality": "Professional", "max_reply_length_sentences": 5,
+                     "sign_off": "Cordialement", "sender_name": "Paulius"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_fr_reply_goes_to_pending_queue(db, fr_clients):
+    payload = _load_fixture("reply_fr_interested.json")
+    with patch("webhooks.instantly_webhook.classify_reply") as mock_cls, \
+         patch("webhooks.instantly_webhook.generate_reply",
+               new=AsyncMock(return_value="Merci pour votre intérêt.")), \
+         patch("webhooks.instantly_webhook.review_quality") as mock_qr, \
+         patch("webhooks.instantly_webhook.translate_to_lt",
+               new=AsyncMock(side_effect=["Labas, įdomu.", "Ačiū už susidomėjimą."])), \
+         patch("webhooks.instantly_webhook.send_reply", new=AsyncMock()) as mock_send, \
+         patch("webhooks.instantly_webhook.notify_approval_pending",
+               new=AsyncMock()) as mock_notify, \
+         patch("webhooks.instantly_webhook.get_free_slots", new=AsyncMock(return_value=[])):
+        mock_cls.return_value = type("C", (), {
+            "category": "INTERESTED", "confidence": 0.92, "reasoning": "wants pricing",
+        })()
+        mock_qr.return_value = type("Q", (), {
+            "passed": True, "score": 8, "issues": [], "summary": "Good",
+            "improvement_suggestion": "",
+        })()
+        result = await handle_instantly_webhook(payload, db, fr_clients, 0.5)
+
+    assert result["status"] == "pending_approval"
+    mock_send.assert_not_called()  # Should NOT auto-send
+    mock_notify.assert_called_once()
+
+    cursor = await db.execute(
+        "SELECT approval_status, original_language, prospect_message_lt, agent_reply_lt, was_sent "
+        "FROM interactions WHERE email_id = ?",
+        (payload["email_id"],),
+    )
+    row = dict(await cursor.fetchone())
+    assert row["approval_status"] == "pending"
+    assert row["was_sent"] == 0
+    assert row["original_language"] == "fr"
+    assert row["prospect_message_lt"] == "Labas, įdomu."
+    assert row["agent_reply_lt"] == "Ačiū už susidomėjimą."
+
+
+@pytest.mark.asyncio
+async def test_lt_reply_still_auto_sends(db, mock_clients):
+    # LT client without approval_required - same flow as before (no pending queue)
+    payload = _load_fixture("reply_interested.json")
+    with patch("webhooks.instantly_webhook.classify_reply") as mock_cls, \
+         patch("webhooks.instantly_webhook.generate_reply",
+               new=AsyncMock(return_value="Ačiū už susidomėjimą")), \
+         patch("webhooks.instantly_webhook.review_quality") as mock_qr, \
+         patch("webhooks.instantly_webhook.send_reply", new=AsyncMock()) as mock_send, \
+         patch("webhooks.instantly_webhook.notify_approval_pending",
+               new=AsyncMock()) as mock_notify, \
+         patch("webhooks.instantly_webhook.notify_reply_sent", new=AsyncMock()), \
+         patch("webhooks.instantly_webhook.get_free_slots", new=AsyncMock(return_value=[])):
+        mock_cls.return_value = type("C", (), {
+            "category": "INTERESTED", "confidence": 0.92, "reasoning": "test",
+        })()
+        mock_qr.return_value = type("Q", (), {
+            "passed": True, "score": 9, "issues": [], "summary": "Good",
+            "improvement_suggestion": "",
+        })()
+        result = await handle_instantly_webhook(payload, db, mock_clients, 0.5)
+
+    assert result["status"] == "sent"
+    mock_send.assert_called_once()
+    mock_notify.assert_not_called()

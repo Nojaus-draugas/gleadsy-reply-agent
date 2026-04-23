@@ -19,6 +19,7 @@ async def generate_reply(
     matching_faq: str | None = None,
     thread_position: int = 1,
     thread_history: str = "",
+    target_language: str | None = None,
 ) -> str:
     """Generate reply. Raises APIUnavailableError if Claude API is down."""
     # Split system into cacheable base (client config - static per client)
@@ -28,6 +29,7 @@ async def generate_reply(
         client_config,
         format_anti_patterns(anti_patterns),
         format_few_shots(few_shots),
+        target_language,
     )
 
     template = REPLY_USER_PROMPTS.get(classification)

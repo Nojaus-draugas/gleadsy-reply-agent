@@ -56,3 +56,45 @@ async def test_get_anti_patterns(db):
     assert len(patterns) == 1
     assert patterns[0]["bad_reply"] == "Kainuoja 500 eur"
     assert patterns[0]["correct_reply"] == "Aptarsime per pokalbį"
+
+
+async def _seed_interaction(db, client_id, category, language, email_id, rating="thumbs_up"):
+    iid = await log_interaction(db, {
+        "campaign_id": "c1", "campaign_name": "Test",
+        "lead_email": "x@y.com", "email_account": "sender@test.com",
+        "email_id": email_id, "client_id": client_id,
+        "prospect_message": "hi", "classification": category,
+        "confidence": 0.9, "agent_reply": "reply", "was_sent": True,
+        "thread_position": 1, "original_language": language,
+    })
+    await update_rating(db, iid, rating, None, None)
+    return iid
+
+
+@pytest.mark.asyncio
+async def test_get_best_examples_filters_by_language_when_set(db):
+    await _seed_interaction(db, "gleadsy", "QUESTION", "lt", "eid-lt")
+    await _seed_interaction(db, "gleadsy", "QUESTION", "fr", "eid-fr")
+    await _seed_interaction(db, "gleadsy", "QUESTION", None, "eid-null")
+
+    lt_examples = await get_best_examples(db, "QUESTION", "gleadsy", limit=5, language="lt")
+    # LT examples: the LT one, plus legacy ones with NULL language (generic fallback)
+    # Must NOT contain FR (different supported language)
+    assert len(lt_examples) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_best_examples_language_none_returns_all(db):
+    """Backward compat: when language=None, no language filter applied."""
+    await _seed_interaction(db, "gleadsy", "QUESTION", "lt", "eid-lt")
+    await _seed_interaction(db, "gleadsy", "QUESTION", "fr", "eid-fr")
+    results = await get_best_examples(db, "QUESTION", "gleadsy", limit=5, language=None)
+    assert len(results) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_best_examples_fr_with_no_matching_examples_still_returns_null_language(db):
+    """Fallback: if no FR examples exist, legacy NULL-language examples are used."""
+    await _seed_interaction(db, "gleadsy", "QUESTION", None, "eid-null")
+    results = await get_best_examples(db, "QUESTION", "gleadsy", limit=5, language="fr")
+    assert len(results) == 1  # The null-language one is returned as fallback

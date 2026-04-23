@@ -85,6 +85,18 @@ MIGRATIONS = [
     "ALTER TABLE interactions ADD COLUMN cost_usd REAL",
     # 2026-04-21 - pasiulymas ka patobulinti (is quality reviewer'io)
     "ALTER TABLE interactions ADD COLUMN improvement_suggestion TEXT",
+    # 2026-04-23 - foreign-language approval + translation
+    "ALTER TABLE interactions ADD COLUMN original_language TEXT",
+    "ALTER TABLE interactions ADD COLUMN prospect_message_lt TEXT",
+    "ALTER TABLE interactions ADD COLUMN agent_reply_lt TEXT",
+    "ALTER TABLE interactions ADD COLUMN approval_status TEXT",
+    "ALTER TABLE interactions ADD COLUMN approved_at TIMESTAMP",
+    "ALTER TABLE interactions ADD COLUMN approved_by TEXT",
+    "ALTER TABLE interactions ADD COLUMN edit_history TEXT",
+    "ALTER TABLE interactions ADD COLUMN final_sent_text TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_interactions_approval ON interactions(approval_status)",
+    # 2026-04-23 - capture Instantly reply_subject for accurate approve thread subject
+    "ALTER TABLE interactions ADD COLUMN reply_subject TEXT",
 ]
 
 
@@ -182,8 +194,10 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
          classification_reasoning, agent_reply, was_sent, matched_faq_index,
          faq_confidence, offered_slots, few_shots_used, thread_position, brief_version,
          quality_score, quality_issues, quality_summary, improvement_suggestion,
-         tokens_in, tokens_out, tokens_cache_read, cost_usd)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         tokens_in, tokens_out, tokens_cache_read, cost_usd,
+         original_language, prospect_message_lt, agent_reply_lt, approval_status,
+         reply_subject)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["campaign_id"], data.get("campaign_name"), data["lead_email"],
             data.get("email_account"), data["email_id"], data["client_id"],
@@ -197,6 +211,9 @@ async def log_interaction(conn: aiosqlite.Connection, data: dict) -> int:
             data.get("quality_summary"), data.get("improvement_suggestion"),
             data.get("tokens_in"), data.get("tokens_out"),
             data.get("tokens_cache_read"), data.get("cost_usd"),
+            data.get("original_language"), data.get("prospect_message_lt"),
+            data.get("agent_reply_lt"), data.get("approval_status"),
+            data.get("reply_subject"),
         ),
     )
     await conn.commit()
@@ -222,8 +239,15 @@ async def is_duplicate(conn: aiosqlite.Connection, email_id: str) -> bool:
 
 
 async def get_thread_reply_count(conn: aiosqlite.Connection, lead_email: str, campaign_id: str) -> int:
+    """Count replies actually sent to the lead (any path: auto-send or approval).
+
+    Includes: was_sent=1 (auto-send path) and approval_status in ('sent','sent_manually').
+    Excludes: pending, rejected (never reached the lead).
+    """
     cursor = await conn.execute(
-        "SELECT COUNT(*) FROM interactions WHERE lead_email = ? AND campaign_id = ? AND was_sent = 1",
+        """SELECT COUNT(*) FROM interactions
+           WHERE lead_email = ? AND campaign_id = ?
+           AND (was_sent = 1 OR approval_status IN ('sent', 'sent_manually'))""",
         (lead_email, campaign_id),
     )
     row = await cursor.fetchone()
@@ -391,3 +415,130 @@ async def get_weekly_stats(conn: aiosqlite.Connection, since: str) -> dict:
         "thumbs_down": ratings.get("thumbs_down", 0),
         "override_count": override_count,
     }
+
+
+import json as _json
+
+
+async def update_approval_status(
+    conn: aiosqlite.Connection,
+    interaction_id: int,
+    status: str,
+    approved_by: str | None = None,
+    final_sent_text: str | None = None,
+) -> None:
+    """Transition approval state. Sets was_sent=1 for 'sent' and 'sent_manually'."""
+    was_sent = 1 if status in ("sent", "sent_manually") else 0
+    now_iso = datetime.utcnow().isoformat()
+    # Only update final_sent_text if provided (keep existing on rejections)
+    if final_sent_text is not None:
+        await conn.execute(
+            """UPDATE interactions SET approval_status = ?, approved_by = ?,
+               approved_at = ?, was_sent = ?, final_sent_text = ? WHERE id = ?""",
+            (status, approved_by, now_iso, was_sent, final_sent_text, interaction_id),
+        )
+    else:
+        await conn.execute(
+            """UPDATE interactions SET approval_status = ?, approved_by = ?,
+               approved_at = ?, was_sent = ? WHERE id = ?""",
+            (status, approved_by, now_iso, was_sent, interaction_id),
+        )
+    await conn.commit()
+
+
+async def get_pending_drafts(
+    conn: aiosqlite.Connection, client_id: str | None = None
+) -> list[dict]:
+    """All pending-approval drafts, oldest first (FIFO for processing)."""
+    if client_id:
+        cursor = await conn.execute(
+            "SELECT * FROM interactions WHERE approval_status = 'pending' "
+            "AND client_id = ? ORDER BY created_at ASC",
+            (client_id,),
+        )
+    else:
+        cursor = await conn.execute(
+            "SELECT * FROM interactions WHERE approval_status = 'pending' "
+            "ORDER BY created_at ASC",
+        )
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def get_pending_count(conn: aiosqlite.Connection) -> int:
+    cursor = await conn.execute(
+        "SELECT COUNT(*) FROM interactions WHERE approval_status = 'pending'"
+    )
+    row = await cursor.fetchone()
+    return row[0]
+
+
+async def append_edit_history(
+    conn: aiosqlite.Connection, interaction_id: int, entry: dict
+) -> None:
+    """Append an edit entry to interactions.edit_history JSON array.
+
+    Entry must include at minimum: lt_instruction, before, after. 'ts' is added
+    automatically if missing.
+    """
+    cursor = await conn.execute(
+        "SELECT edit_history FROM interactions WHERE id = ?", (interaction_id,)
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        raise ValueError(f"Interaction {interaction_id} not found")
+    raw = row["edit_history"] or "[]"
+    try:
+        history = _json.loads(raw)
+    except (ValueError, TypeError):
+        history = []
+    if "ts" not in entry:
+        entry = {**entry, "ts": datetime.utcnow().isoformat()}
+    history.append(entry)
+    await conn.execute(
+        "UPDATE interactions SET edit_history = ? WHERE id = ?",
+        (_json.dumps(history, ensure_ascii=False), interaction_id),
+    )
+    await conn.commit()
+
+
+async def update_draft_text(
+    conn: aiosqlite.Connection,
+    interaction_id: int,
+    agent_reply: str,
+    agent_reply_lt: str | None,
+) -> None:
+    """Replace current draft after an edit iteration."""
+    await conn.execute(
+        "UPDATE interactions SET agent_reply = ?, agent_reply_lt = ? WHERE id = ?",
+        (agent_reply, agent_reply_lt, interaction_id),
+    )
+    await conn.commit()
+
+
+async def atomically_claim_for_approval(
+    conn: aiosqlite.Connection, interaction_id: int
+) -> bool:
+    """Atomically flip approval_status from 'pending' to 'approving'.
+
+    Returns True if this caller won the race and should proceed to send.
+    Returns False if the draft was no longer pending (already taken or rejected).
+    """
+    cursor = await conn.execute(
+        "UPDATE interactions SET approval_status = 'approving' "
+        "WHERE id = ? AND approval_status = 'pending'",
+        (interaction_id,),
+    )
+    await conn.commit()
+    return cursor.rowcount == 1
+
+
+async def restore_pending_after_failed_send(
+    conn: aiosqlite.Connection, interaction_id: int
+) -> None:
+    """If Instantly send fails after we claimed the row, restore it to pending."""
+    await conn.execute(
+        "UPDATE interactions SET approval_status = 'pending' "
+        "WHERE id = ? AND approval_status = 'approving'",
+        (interaction_id,),
+    )
+    await conn.commit()

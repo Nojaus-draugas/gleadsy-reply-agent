@@ -1,0 +1,11 @@
+{
+  "event_type": "reply_received",
+  "campaign_id": "campaign-fr-uuid",
+  "campaign_name": "Gleadsy FR outreach",
+  "lead_email": "pierre.dupont@acme.fr",
+  "email_account": "paulius@gleadsy.com",
+  "email_id": "email-fr-12345",
+  "reply_text": "Bonjour, je suis intéressé par vos services. Pourriez-vous me donner plus de détails sur les prix?",
+  "reply_subject": "Re: Proposition",
+  "timestamp": "2026-04-23T10:30:00Z"
+}

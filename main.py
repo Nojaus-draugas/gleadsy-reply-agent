@@ -15,7 +15,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
 from core.client_loader import load_clients
-from db.database import init_db, update_rating, set_human_takeover, get_weekly_stats
+from core.translation import translate_to_lt, rewrite_draft
+from core.instantly_client import send_reply
+from core.hallucination_guard import check_reply as check_hallucinations
+from core.quality_reviewer import review_quality
+from db.database import (
+    init_db, update_rating, set_human_takeover, get_weekly_stats,
+    get_pending_drafts, get_pending_count, update_approval_status,
+    append_edit_history, update_draft_text, log_interaction,
+    atomically_claim_for_approval, restore_pending_after_failed_send,
+)
 from webhooks.instantly_webhook import handle_instantly_webhook
 from cron.outcome_tracker import run_outcome_tracker
 from cron.weekly_digest import run_weekly_digest
@@ -696,6 +705,20 @@ async def replies_dashboard(request: Request):
 
     test_mode_label = "TEST_MODE" if config.TEST_MODE else "LIVE"
 
+    pending_count = await get_pending_count(db)
+    if pending_count > 0:
+        pending_badge_html = (
+            f'<a href="/pending" style="padding:8px 14px;background:#c62828;color:white;'
+            f'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">'
+            f'⏳ Laukia approval ({pending_count})</a>'
+        )
+    else:
+        pending_badge_html = (
+            '<a href="/pending" style="padding:8px 14px;background:#e0e0e0;color:#333;'
+            'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">'
+            '⏳ Laukia approval (0)</a>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Gleadsy Reply Agent - Dashboard</title>
 <meta http-equiv="refresh" content="30">
@@ -738,6 +761,7 @@ tr:hover {{ background: #f0f7ff; }}
 <div class="header">
     <h1>Gleadsy Reply Agent</h1>
     <div style="display:flex;gap:8px;align-items:center">
+        {pending_badge_html}
         <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymosi progresas</a>
         <form method="POST" action="/logout" style="margin:0">
             <button type="submit" class="logout-btn">Atsijungti</button>
@@ -811,7 +835,7 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
         "SELECT id, created_at, classification, confidence, classification_reasoning, "
         "prospect_message, agent_reply, was_sent, human_rating, "
         "quality_score, quality_summary, quality_issues, improvement_suggestion, "
-        "few_shots_used, thread_position "
+        "few_shots_used, thread_position, approval_status "
         "FROM interactions WHERE lead_email = ? AND campaign_id = ? ORDER BY created_at ASC",
         (lead_email, campaign_id),
     )
@@ -926,13 +950,24 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
                 <div class="improve-body">{improvement}</div>
             </div>'''
 
+            approval_status = r.get("approval_status")
+            pending_html = ""
+            if approval_status == "pending":
+                pending_html = (
+                    '<div style="margin-top:8px;padding:8px 12px;background:#fff3e0;'
+                    'border-left:3px solid #f9a825;border-radius:4px;font-size:12px">'
+                    '⏳ <strong>Laukia approval</strong> - '
+                    f'<a href="/pending#draft-{r["id"]}" style="color:#1565c0">Eiti į approval</a>'
+                    '</div>'
+                )
+
             messages_html += f"""
         <div class="msg agent-msg">
             <div class="msg-header">
                 <strong>Agent</strong> - {sent_text}{rating_icon}
                 <span class="q-badge-inline" style="color:{q_badge_color};background:{q_badge_bg};margin-left:8px">{quality_score if quality_score is not None else "-"}/10</span>
             </div>
-            <div class="msg-body">{agent_reply}</div>{improve_html}{why_html}
+            <div class="msg-body">{agent_reply}</div>{improve_html}{why_html}{pending_html}
         </div>"""
 
     safe_email = html_mod.escape(lead_email)
@@ -980,6 +1015,488 @@ h2 {{ color: #333; }}
 <br><a href="/replies" class="back">&larr; Grizti i dashboard</a>
 </body></html>"""
     return HTMLResponse(content=html)
+
+
+@app.get("/pending")
+async def pending_drafts_page(request: Request):
+    """List of drafts waiting Paulius's approval (foreign-language replies)."""
+    from fastapi.responses import HTMLResponse
+    import html as html_mod
+    from datetime import datetime
+
+    if not _get_dashboard_session(request):
+        return RedirectResponse(url="/login", status_code=302)
+
+    filter_client = request.query_params.get("client", "")
+    rows = await get_pending_drafts(db, client_id=filter_client or None)
+
+    LANG_FLAGS = {"lt": "🇱🇹", "en": "🇬🇧", "fr": "🇫🇷",
+                   "de": "🇩🇪", "et": "🇪🇪", "lv": "🇱🇻"}
+    CLS_COLORS = {
+        "INTERESTED": "#2e7d32", "QUESTION": "#1565c0", "NOT_NOW": "#e65100",
+        "REFERRAL": "#6a1b9a", "UNCERTAIN": "#f9a825",
+    }
+
+    def _age_str(created_at):
+        try:
+            ts = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            delta = datetime.utcnow() - ts.replace(tzinfo=None)
+            secs = int(delta.total_seconds())
+            if secs < 60: return f"{secs}s"
+            if secs < 3600: return f"{secs // 60}min"
+            if secs < 86400: return f"{secs // 3600}h {(secs % 3600) // 60}min"
+            return f"{secs // 86400}d {(secs % 86400) // 3600}h"
+        except Exception:
+            return "?"
+
+    cursor = await db.execute(
+        "SELECT DISTINCT client_id FROM interactions WHERE approval_status='pending' ORDER BY client_id"
+    )
+    available = [r["client_id"] for r in await cursor.fetchall()]
+    client_options = '<option value="">Visi klientai</option>'
+    for c in available:
+        sel = ' selected' if c == filter_client else ''
+        client_options += f'<option value="{html_mod.escape(c)}"{sel}>{html_mod.escape(c)}</option>'
+
+    if not rows:
+        drafts_html = ("<div class='empty'>"
+                       "<h2>Viskas apdorota</h2>"
+                       "<p>Nėra laukiančių draftų.</p>"
+                       "</div>")
+    else:
+        drafts_html = ""
+        for r in rows:
+            iid = r["id"]
+            lang = (r.get("original_language") or "?").lower()
+            flag = LANG_FLAGS.get(lang, "")
+            cls = r.get("classification", "")
+            cls_color = CLS_COLORS.get(cls, "#333")
+            age = _age_str(r.get("created_at"))
+            qscore = r.get("quality_score")
+            qbadge = f"{qscore}/10" if qscore is not None else "-"
+            conf = r.get("confidence", 0)
+            prospect_orig = html_mod.escape(r.get("prospect_message") or "")
+            prospect_lt = html_mod.escape(r.get("prospect_message_lt") or prospect_orig)
+            reply_orig = html_mod.escape(r.get("agent_reply") or "")
+            reply_lt = html_mod.escape(r.get("agent_reply_lt") or reply_orig)
+            lead = html_mod.escape(r.get("lead_email", ""))
+            client_name = html_mod.escape(r.get("client_id", ""))
+            campaign_name = html_mod.escape(r.get("campaign_name") or "")
+
+            drafts_html += f"""
+<div class="draft" id="draft-{iid}">
+  <div class="draft-header">
+    <div class="meta">
+      <strong>👤 {lead}</strong>  {flag} {lang.upper()}  |  klientas: <b>{client_name}</b>  |  {campaign_name}
+    </div>
+    <div class="age">laukia {age}</div>
+  </div>
+  <div class="badges">
+    <span class="badge" style="background:{cls_color};color:white">{cls}</span>
+    <span class="badge" style="background:#eee">Quality: {qbadge}</span>
+    <span class="badge" style="background:#eee">Conf: {conf:.0%}</span>
+  </div>
+
+  <div class="section">
+    <div class="label">Lead zinute</div>
+    <div class="grid-2">
+      <div class="lang-col">
+        <div class="col-label">LT vertimas</div>
+        <pre>{prospect_lt}</pre>
+      </div>
+      <div class="lang-col">
+        <div class="col-label">{lang.upper()} originalas</div>
+        <pre>{prospect_orig}</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Agent'o draftas</div>
+    <div class="grid-2">
+      <div class="lang-col">
+        <div class="col-label">LT preview</div>
+        <pre id="reply-lt-{iid}">{reply_lt}</pre>
+      </div>
+      <div class="lang-col">
+        <div class="col-label">{lang.upper()} (siunčiamas)</div>
+        <pre id="reply-orig-{iid}">{reply_orig}</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" onclick="approve({iid})">Siųsti per Instantly</button>
+    <button class="btn" onclick="copyText({iid})">Copy teksta</button>
+    <button class="btn" onclick="openEdit({iid})">Edit</button>
+    <button class="btn danger" onclick="reject({iid})">Atmesti</button>
+    <button class="btn danger" onclick="takeover({iid})">Human takeover</button>
+  </div>
+</div>"""
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Laukia approval - Gleadsy</title>
+<meta http-equiv="refresh" content="30">
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
+h1 {{ color: #333; margin: 0 0 8px 0; }}
+.header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }}
+.filters {{ background: white; padding: 12px 18px; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; gap: 12px; align-items: center; }}
+.draft {{ background: white; padding: 20px; margin-bottom: 18px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 4px solid #f9a825; }}
+.draft-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }}
+.meta {{ font-size: 14px; color: #333; }}
+.age {{ color: #888; font-size: 12px; }}
+.badges {{ margin-bottom: 14px; }}
+.badge {{ display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-right: 6px; }}
+.section {{ margin: 14px 0; }}
+.label {{ font-weight: 600; color: #333; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; }}
+.grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+.lang-col {{ background: #fafafa; padding: 12px; border-radius: 6px; border: 1px solid #eee; }}
+.col-label {{ font-size: 11px; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 6px; }}
+.lang-col pre {{ white-space: pre-wrap; word-break: break-word; margin: 0; font-family: inherit; font-size: 13px; line-height: 1.5; color: #222; }}
+.actions {{ margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }}
+.btn {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; background: #e0e0e0; color: #333; }}
+.btn:hover {{ background: #d0d0d0; }}
+.btn.primary {{ background: #4285f4; color: white; }}
+.btn.primary:hover {{ background: #3367d6; }}
+.btn.danger {{ background: #f5f5f5; color: #c62828; }}
+.btn.danger:hover {{ background: #ffebee; }}
+.empty {{ text-align: center; padding: 60px 20px; background: white; border-radius: 10px; color: #666; }}
+.empty h2 {{ margin: 0 0 8px 0; color: #2e7d32; }}
+.modal-bg {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; }}
+.modal {{ display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; padding: 24px; width: 90%; max-width: 800px; max-height: 85vh; overflow: auto; z-index: 1001; box-shadow: 0 8px 30px rgba(0,0,0,0.3); }}
+.modal h3 {{ margin-top: 0; }}
+.modal textarea {{ width: 100%; min-height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-family: inherit; font-size: 13px; box-sizing: border-box; }}
+.modal .preview {{ margin: 12px 0; padding: 10px; background: #fafafa; border-radius: 6px; font-size: 13px; white-space: pre-wrap; border: 1px solid #eee; }}
+</style></head><body>
+<div class="header">
+  <div>
+    <a href="/replies" style="color:#4285f4;text-decoration:none;font-size:13px">&larr; Visi reply'ai</a>
+    <h1>Laukia approval ({len(rows)})</h1>
+  </div>
+</div>
+
+<div class="filters">
+  <form method="GET" action="/pending" style="display:flex;gap:10px;align-items:center;margin:0">
+    <label style="font-size:12px;color:#666;font-weight:600;text-transform:uppercase">Klientas:</label>
+    <select name="client" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px">{client_options}</select>
+    <button type="submit" style="padding:6px 16px;background:#4285f4;color:white;border:none;border-radius:6px;cursor:pointer">Filtruoti</button>
+    <a href="/pending" style="padding:6px 16px;background:#e0e0e0;color:#333;border-radius:6px;text-decoration:none;font-size:13px">Isvalyti</a>
+  </form>
+</div>
+
+{drafts_html}
+
+<div class="modal-bg" id="modalBg" onclick="closeEdit()"></div>
+<div class="modal" id="editModal">
+  <h3>Redaguoti drafta #<span id="editIid"></span></h3>
+  <div class="label" style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600">Dabartinis draftas:</div>
+  <div class="preview" id="editCurrent"></div>
+
+  <div class="label" style="margin-top:14px;font-size:11px;color:#666;text-transform:uppercase;font-weight:600">LT instrukcija - ka pakeisti:</div>
+  <textarea id="editInstruction" placeholder="Pvz: Pridek klausima, ar jie jau dirbo su cold outreach agentūra. Pabaigoje paprašyk susitikimo laiko."></textarea>
+
+  <div id="editResult" style="display:none;margin-top:14px">
+    <div class="label" style="font-size:11px;color:#666;text-transform:uppercase;font-weight:600">Naujas draftas:</div>
+    <div class="grid-2">
+      <div class="lang-col">
+        <div class="col-label">LT preview</div>
+        <pre id="editResultLt"></pre>
+      </div>
+      <div class="lang-col">
+        <div class="col-label">Original</div>
+        <pre id="editResultOrig"></pre>
+      </div>
+    </div>
+      <div id="editQualityInfo" style="margin-top:12px;padding:10px;border-radius:6px;font-size:12px"></div>
+  </div>
+
+  <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+    <button class="btn" onclick="closeEdit()">Atsaukti</button>
+    <button class="btn primary" onclick="runRewrite()">Perrasyti su Claude</button>
+    <button class="btn primary" id="saveAndSendBtn" style="display:none" onclick="saveAndSend()">Issaugoti + Siusti</button>
+  </div>
+</div>
+
+<script>
+async function post(url, body) {{
+  const res = await fetch(url, {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(body || {{}}),
+  }});
+  if (!res.ok) alert('Klaida: ' + res.status);
+  return res;
+}}
+
+async function approve(iid) {{
+  if (!confirm('Siusti drafta per Instantly?')) return;
+  const res = await post('/api/approve/' + iid);
+  if (res.ok) location.reload();
+}}
+
+async function reject(iid) {{
+  if (!confirm('Atmesti drafta? Lead\\'ui niekas nebus siunčiama.')) return;
+  const res = await post('/api/reject/' + iid);
+  if (res.ok) location.reload();
+}}
+
+async function takeover(iid) {{
+  if (!confirm('Human takeover? Agent\\'as nebereaguos siam lead\\'ui.')) return;
+  const res = await post('/api/takeover/' + iid);
+  if (res.ok) location.reload();
+}}
+
+async function copyText(iid) {{
+  const txt = document.getElementById('reply-orig-' + iid).innerText;
+  await navigator.clipboard.writeText(txt);
+  if (confirm('Nukopijuota. Pazymeti kaip issiusta rankomis?')) {{
+    const res = await post('/api/mark_sent/' + iid);
+    if (res.ok) location.reload();
+  }}
+}}
+
+let currentEditIid = null;
+function openEdit(iid) {{
+  currentEditIid = iid;
+  document.getElementById('editIid').innerText = iid;
+  document.getElementById('editCurrent').innerText =
+    document.getElementById('reply-orig-' + iid).innerText;
+  document.getElementById('editInstruction').value = '';
+  document.getElementById('editResult').style.display = 'none';
+  document.getElementById('saveAndSendBtn').style.display = 'none';
+  document.getElementById('modalBg').style.display = 'block';
+  document.getElementById('editModal').style.display = 'block';
+}}
+function closeEdit() {{
+  document.getElementById('modalBg').style.display = 'none';
+  document.getElementById('editModal').style.display = 'none';
+  currentEditIid = null;
+}}
+async function runRewrite() {{
+  const instr = document.getElementById('editInstruction').value.trim();
+  if (!instr) {{ alert('Irasyk, ka pakeisti.'); return; }}
+  const res = await post('/api/edit_draft/' + currentEditIid, {{lt_instruction: instr}});
+  if (!res.ok) return;
+  const body = await res.json();
+  document.getElementById('editResultLt').innerText = body.agent_reply_lt || '';
+  document.getElementById('editResultOrig').innerText = body.agent_reply || '';
+  document.getElementById('editResult').style.display = 'block';
+  document.getElementById('saveAndSendBtn').style.display = 'inline-block';
+  document.getElementById('reply-lt-' + currentEditIid).innerText = body.agent_reply_lt || '';
+  document.getElementById('reply-orig-' + currentEditIid).innerText = body.agent_reply || '';
+
+  // Quality + hallucination info
+  const qInfo = document.getElementById('editQualityInfo');
+  const score = body.quality_score;
+  const halluc = body.hallucination_issues || [];
+  let parts = [];
+  if (score !== null && score !== undefined) {{
+    const color = score >= 8 ? '#2e7d32' : (score >= 6 ? '#e65100' : '#c62828');
+    const bg = score >= 8 ? '#e8f5e9' : (score >= 6 ? '#fff3e0' : '#ffebee');
+    qInfo.style.background = bg;
+    qInfo.style.color = color;
+    parts.push('<strong>Quality: ' + score + '/10</strong> - ' + (body.quality_summary || ''));
+  }}
+  if (halluc.length > 0) {{
+    parts.push('<div style="margin-top:6px;color:#c62828"><strong>&#9888;&#65039; Hallucination:</strong> ' + halluc.join('; ') + '</div>');
+  }}
+  qInfo.innerHTML = parts.join('');
+  qInfo.style.display = parts.length ? 'block' : 'none';
+}}
+async function saveAndSend() {{
+  const res = await post('/api/approve/' + currentEditIid);
+  if (res.ok) location.reload();
+}}
+
+if (location.hash && location.hash.startsWith('#draft-')) {{
+  setTimeout(() => {{
+    const el = document.querySelector(location.hash);
+    if (el) el.style.borderLeftColor = '#4285f4';
+  }}, 100);
+}}
+</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/api/approve/{iid}")
+async def api_approve(iid: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401)
+
+    # Atomic claim - only one concurrent caller can proceed
+    claimed = await atomically_claim_for_approval(db, iid)
+    if not claimed:
+        # Either already sent/sent_manually/rejected, or another request is in flight
+        raise HTTPException(
+            status_code=409,
+            detail="Draft is no longer pending (already handled or in-flight)",
+        )
+
+    # Fetch draft data AFTER claiming
+    cursor = await db.execute(
+        "SELECT lead_email, email_account, email_id, agent_reply, campaign_id, campaign_name, reply_subject "
+        "FROM interactions WHERE id = ?",
+        (iid,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        # Should never happen - we just claimed it
+        raise HTTPException(status_code=404)
+    row = dict(row)
+    stored_subject = (row.get("reply_subject") or "").strip()
+    if stored_subject:
+        # Prepend "Re: " if recipient's thread subject doesn't already have it
+        if stored_subject.lower().startswith("re:"):
+            subject = stored_subject
+        else:
+            subject = f"Re: {stored_subject}"
+    else:
+        # Fallback: synthetic subject from campaign name
+        subject = f"Re: {row.get('campaign_name') or ''}".strip() if row.get("campaign_name") else ""
+
+    try:
+        await send_reply(
+            email_account=row["email_account"],
+            reply_to_uuid=row["email_id"],
+            subject=subject,
+            body_text=row["agent_reply"],
+        )
+    except Exception as e:
+        logger.exception("Approval send failed for iid=%s", iid)
+        # Restore pending so user can retry
+        await restore_pending_after_failed_send(db, iid)
+        from core.slack_notifier import notify_error
+        await notify_error("approval_send_failed", f"iid={iid} err={e}")
+        raise HTTPException(status_code=502, detail=f"Instantly send failed: {e}")
+
+    await update_approval_status(db, iid, "sent", approved_by="paulius",
+                                  final_sent_text=row["agent_reply"])
+    return {"status": "sent"}
+
+
+@app.post("/api/reject/{iid}")
+async def api_reject(iid: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401)
+    await update_approval_status(db, iid, "rejected", approved_by="paulius")
+    return {"status": "rejected"}
+
+
+@app.post("/api/mark_sent/{iid}")
+async def api_mark_sent(iid: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401)
+    await update_approval_status(db, iid, "sent_manually", approved_by="paulius")
+    return {"status": "sent_manually"}
+
+
+@app.post("/api/takeover/{iid}")
+async def api_takeover(iid: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401)
+    cursor = await db.execute(
+        "SELECT lead_email, campaign_id FROM interactions WHERE id = ?", (iid,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404)
+    await set_human_takeover(db, row["lead_email"], row["campaign_id"])
+    await update_approval_status(db, iid, "rejected", approved_by="paulius")
+    return {"status": "takeover_registered"}
+
+
+@app.post("/api/edit_draft/{iid}")
+async def api_edit_draft(iid: int, request: Request):
+    if not _get_dashboard_session(request):
+        raise HTTPException(status_code=401)
+    body = await request.json()
+    lt_instruction = (body or {}).get("lt_instruction", "").strip()
+    if not lt_instruction:
+        raise HTTPException(status_code=400, detail="lt_instruction required")
+
+    cursor = await db.execute(
+        "SELECT agent_reply, original_language, client_id, campaign_id, approval_status, "
+        "prospect_message, classification "
+        "FROM interactions WHERE id = ?",
+        (iid,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    row = dict(row)
+    if row["approval_status"] != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Draft is no longer pending (status: {row['approval_status']})",
+        )
+
+    client_config = clients.get(row["client_id"])
+    if not client_config:
+        raise HTTPException(status_code=500, detail="Client config not loaded")
+
+    before = row["agent_reply"] or ""
+    target_lang = row["original_language"] or client_config.get("tone", {}).get("language", "lt")
+
+    try:
+        new_draft = await rewrite_draft(
+            original_draft=before,
+            lt_instruction=lt_instruction,
+            target_language=target_lang,
+            client_config=client_config,
+        )
+    except Exception as e:
+        logger.exception("rewrite_draft failed for iid=%s", iid)
+        raise HTTPException(status_code=502, detail=f"Claude rewrite failed: {e}")
+
+    new_draft_lt = await translate_to_lt(new_draft, target_lang)
+
+    # Re-check quality + hallucinations on the edited draft (informational, non-blocking)
+    hallucination_issues = check_hallucinations(new_draft, client_config)
+    try:
+        quality = await review_quality(
+            prospect_message=row["prospect_message"],
+            classification=row["classification"],
+            generated_reply=new_draft,
+            client_name=client_config.get("client_name", row["client_id"]),
+        )
+        quality_score = quality.score
+        quality_summary = quality.summary
+        quality_issues = list(quality.issues) if quality.issues else []
+    except Exception as e:
+        logger.warning("Quality review failed on edited draft iid=%s: %s", iid, e)
+        quality_score = None
+        quality_summary = f"Quality review error: {e}"
+        quality_issues = []
+
+    # Persist new draft + refreshed quality values
+    await update_draft_text(db, iid, new_draft, new_draft_lt)
+    await db.execute(
+        "UPDATE interactions SET quality_score = ?, quality_summary = ?, quality_issues = ? "
+        "WHERE id = ?",
+        (quality_score, quality_summary,
+         json.dumps(quality_issues, ensure_ascii=False), iid),
+    )
+    await db.commit()
+    await append_edit_history(db, iid, {
+        "lt_instruction": lt_instruction,
+        "before": before,
+        "after": new_draft,
+        "before_lt": "",
+        "after_lt": new_draft_lt,
+        "new_quality_score": quality_score,
+        "new_hallucination_count": len(hallucination_issues),
+    })
+
+    return {
+        "agent_reply": new_draft,
+        "agent_reply_lt": new_draft_lt,
+        "quality_score": quality_score,
+        "quality_summary": quality_summary,
+        "quality_issues": quality_issues,
+        "hallucination_issues": hallucination_issues,
+    }
 
 
 @app.get("/answer/{interaction_id}")
