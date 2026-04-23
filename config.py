@@ -25,6 +25,8 @@ QUALITY_MODEL = os.getenv("QUALITY_MODEL", "claude-sonnet-4-6")
 FAQ_MATCH_MODEL = os.getenv("FAQ_MATCH_MODEL", "claude-haiku-4-5-20251001")
 TIME_PARSE_MODEL = os.getenv("TIME_PARSE_MODEL", "claude-haiku-4-5-20251001")
 MEETING_CONFIRM_MODEL = os.getenv("MEETING_CONFIRM_MODEL", "claude-haiku-4-5-20251001")
+TRANSLATION_MODEL = os.getenv("TRANSLATION_MODEL", "claude-haiku-4-5-20251001")
+REWRITE_MODEL = os.getenv("REWRITE_MODEL", "claude-sonnet-4-6")
 
 # Cost per 1M tokens ($) - naudojama cost tracking'ui log'uose
 # Šaltinis: anthropic.com/pricing (2026-04)
