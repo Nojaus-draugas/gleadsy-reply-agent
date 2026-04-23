@@ -1,7 +1,8 @@
 # gleadsy-reply-agent/prompts/reply.py
 
-def _build_reply_static_base(client: dict) -> str:
+def _build_reply_static_base(client: dict, target_language: str | None = None) -> str:
     """Static per-client prompt dalis - cache'inama 5 min TTL."""
+    effective_language = target_language or client['tone']['language']
     cannot_promise = "\n".join(f"- {p}" for p in client["boundaries"]["cannot_promise"])
     max_sent = client['tone']['max_reply_length_sentences']
     lang_hints = client.get("language_hints", "")
@@ -24,7 +25,7 @@ Tikslas - natūraliai vesti pokalbį link trumpo susitikimo.
 {client['pricing']}
 
 ## Tonas
-- Kalba: {client['tone']['language']} (jei "auto" - detektuok iš prospect'o žinutės kalbos: LT/FR/EN)
+- Kalba: {effective_language} (jei "auto" - detektuok iš prospect'o žinutės kalbos: LT/FR/EN)
 - Kreipinys: {client['tone']['addressing']}
 - Stilius: {client['tone']['personality']}
 - Max ilgis: {max_sent} sakiniai
@@ -34,7 +35,7 @@ Tikslas - natūraliai vesti pokalbį link trumpo susitikimo.
 {cannot_promise}
 {resources_section}{lang_section}
 ## Pagrindinės taisyklės
-0. **Kalba.** Atsakyk TA PAČIA kalba, kuria prospect'as parašė paskutinę žinutę. Jei prospect'as FR → atsakyk FR. Jei EN → atsakyk EN. Jei LT → atsakyk LT. Signal logic (kvalifikacija/objection/booking) veikia vienodai visose kalbose - tik leksika keičiasi. Pavyzdžiui FR: "Linkėjimai" → "Cordialement" arba "Bien à vous"; EN: "Best regards" arba "Cheers".
+0. **Kalba.** Atsakyk {effective_language} kalba. Signal logic (kvalifikacija/objection/booking) veikia vienodai visose kalbose - tik leksika keičiasi. Pavyzdžiui FR: "Linkėjimai" → "Cordialement" arba "Bien à vous"; EN: "Best regards" arba "Cheers".
 
 KRITIŠKAI SVARBU - ACTION-FIRST filosofija (ne qualify-first):
 
@@ -67,9 +68,9 @@ def _build_reply_dynamic_tail(anti_patterns_section: str, few_shot_section: str)
     return "\n\n".join(parts) if parts else ""
 
 
-def build_reply_system_prompt_blocks(client: dict, anti_patterns_section: str, few_shot_section: str) -> list:
+def build_reply_system_prompt_blocks(client: dict, anti_patterns_section: str, few_shot_section: str, target_language: str | None = None) -> list:
     """Grąžina system prompt kaip blokų sąrašą: static base (cached) + dynamic tail (no cache)."""
-    base = _build_reply_static_base(client)
+    base = _build_reply_static_base(client, target_language)
     tail = _build_reply_dynamic_tail(anti_patterns_section, few_shot_section)
     blocks = [{"type": "text", "text": base, "cache_control": {"type": "ephemeral"}}]
     if tail:
@@ -77,9 +78,9 @@ def build_reply_system_prompt_blocks(client: dict, anti_patterns_section: str, f
     return blocks
 
 
-def build_reply_system_prompt(client: dict, anti_patterns_section: str, few_shot_section: str) -> str:
+def build_reply_system_prompt(client: dict, anti_patterns_section: str, few_shot_section: str, target_language: str | None = None) -> str:
     """Backward-compat - grąžina vieną string'ą (naudojama testuose ir legacy keliuose)."""
-    base = _build_reply_static_base(client)
+    base = _build_reply_static_base(client, target_language)
     tail = _build_reply_dynamic_tail(anti_patterns_section, few_shot_section)
     return f"{base}\n\n{tail}" if tail else base
 
