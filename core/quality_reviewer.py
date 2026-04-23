@@ -72,23 +72,33 @@ Ar šis atsakymas tinkamas siųsti? Įvertink JSON formatu."""
     try:
         raw = await call_claude_with_retry(
             model=config.QUALITY_MODEL,
-            max_tokens=256,
+            max_tokens=512,  # improvement_suggestion gali būti ilgas
             system=QUALITY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             cache_system=True,
             purpose="quality_review",
         )
 
-        # Parse JSON
+        # Parse JSON - bandyti kelis būdus (markdown code blocks, trailing text)
+        import re
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            import re
-            match = re.search(r'\{[^{}]*"score"[^{}]*\}', raw, re.DOTALL)
-            if match:
-                data = json.loads(match.group(0))
+            # Markdown code block
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+            if m:
+                data = json.loads(m.group(1))
             else:
-                raise
+                # Any JSON object with "score" key (multi-line greedy)
+                m = re.search(r"\{[\s\S]*?\"score\"[\s\S]*?\}", raw)
+                if m:
+                    try:
+                        data = json.loads(m.group(0))
+                    except json.JSONDecodeError:
+                        raise
+                else:
+                    logger.warning(f"Quality review returned non-JSON: {raw[:200]}")
+                    raise
 
         score = int(data.get("score", 5))
         issues = data.get("issues", [])
