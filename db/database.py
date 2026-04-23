@@ -509,3 +509,32 @@ async def update_draft_text(
         (agent_reply, agent_reply_lt, interaction_id),
     )
     await conn.commit()
+
+
+async def atomically_claim_for_approval(
+    conn: aiosqlite.Connection, interaction_id: int
+) -> bool:
+    """Atomically flip approval_status from 'pending' to 'approving'.
+
+    Returns True if this caller won the race and should proceed to send.
+    Returns False if the draft was no longer pending (already taken or rejected).
+    """
+    cursor = await conn.execute(
+        "UPDATE interactions SET approval_status = 'approving' "
+        "WHERE id = ? AND approval_status = 'pending'",
+        (interaction_id,),
+    )
+    await conn.commit()
+    return cursor.rowcount == 1
+
+
+async def restore_pending_after_failed_send(
+    conn: aiosqlite.Connection, interaction_id: int
+) -> None:
+    """If Instantly send fails after we claimed the row, restore it to pending."""
+    await conn.execute(
+        "UPDATE interactions SET approval_status = 'pending' "
+        "WHERE id = ? AND approval_status = 'approving'",
+        (interaction_id,),
+    )
+    await conn.commit()

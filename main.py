@@ -21,6 +21,7 @@ from db.database import (
     init_db, update_rating, set_human_takeover, get_weekly_stats,
     get_pending_drafts, get_pending_count, update_approval_status,
     append_edit_history, update_draft_text, log_interaction,
+    atomically_claim_for_approval, restore_pending_after_failed_send,
 )
 from webhooks.instantly_webhook import handle_instantly_webhook
 from cron.outcome_tracker import run_outcome_tracker
@@ -1302,16 +1303,29 @@ if (location.hash && location.hash.startsWith('#draft-')) {{
 async def api_approve(iid: int, request: Request):
     if not _get_dashboard_session(request):
         raise HTTPException(status_code=401)
+
+    # Atomic claim - only one concurrent caller can proceed
+    claimed = await atomically_claim_for_approval(db, iid)
+    if not claimed:
+        # Either already sent/sent_manually/rejected, or another request is in flight
+        raise HTTPException(
+            status_code=409,
+            detail="Draft is no longer pending (already handled or in-flight)",
+        )
+
+    # Fetch draft data AFTER claiming
     cursor = await db.execute(
         "SELECT lead_email, email_account, email_id, agent_reply, campaign_id, campaign_name "
-        "FROM interactions WHERE id = ? AND approval_status = 'pending'",
+        "FROM interactions WHERE id = ?",
         (iid,),
     )
     row = await cursor.fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Pending draft not found")
+        # Should never happen - we just claimed it
+        raise HTTPException(status_code=404)
     row = dict(row)
     subject = f"Re: {row.get('campaign_name') or ''}".strip() if row.get("campaign_name") else ""
+
     try:
         await send_reply(
             email_account=row["email_account"],
@@ -1321,9 +1335,12 @@ async def api_approve(iid: int, request: Request):
         )
     except Exception as e:
         logger.exception("Approval send failed for iid=%s", iid)
+        # Restore pending so user can retry
+        await restore_pending_after_failed_send(db, iid)
         from core.slack_notifier import notify_error
         await notify_error("approval_send_failed", f"iid={iid} err={e}")
         raise HTTPException(status_code=502, detail=f"Instantly send failed: {e}")
+
     await update_approval_status(db, iid, "sent", approved_by="paulius",
                                   final_sent_text=row["agent_reply"])
     return {"status": "sent"}
@@ -1370,14 +1387,19 @@ async def api_edit_draft(iid: int, request: Request):
         raise HTTPException(status_code=400, detail="lt_instruction required")
 
     cursor = await db.execute(
-        "SELECT agent_reply, original_language, client_id, campaign_id "
-        "FROM interactions WHERE id = ? AND approval_status = 'pending'",
+        "SELECT agent_reply, original_language, client_id, campaign_id, approval_status "
+        "FROM interactions WHERE id = ?",
         (iid,),
     )
     row = await cursor.fetchone()
     if not row:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Interaction not found")
     row = dict(row)
+    if row["approval_status"] != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Draft is no longer pending (status: {row['approval_status']})",
+        )
 
     client_config = clients.get(row["client_id"])
     if not client_config:

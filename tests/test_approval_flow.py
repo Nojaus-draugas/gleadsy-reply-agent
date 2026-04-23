@@ -41,7 +41,8 @@ from datetime import datetime
 from db.database import (
     log_interaction, update_approval_status, get_pending_drafts,
     get_pending_count, append_edit_history, update_draft_text,
-    get_thread_reply_count,
+    get_thread_reply_count, atomically_claim_for_approval,
+    restore_pending_after_failed_send,
 )
 
 
@@ -163,3 +164,44 @@ async def test_thread_reply_count_includes_sent_approval_status(db):
     await _log_pending(db, email_id="eid-3", approval_status="pending", was_sent=False)
     count = await get_thread_reply_count(db, "x@y.com", "camp-1")
     assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_atomic_claim_succeeds_once(db):
+    iid = await _log_pending(db, email_id="eid-race")
+    # First caller wins
+    assert await atomically_claim_for_approval(db, iid) is True
+    # Verify state transitioned to 'approving'
+    cursor = await db.execute(
+        "SELECT approval_status FROM interactions WHERE id = ?", (iid,)
+    )
+    assert (await cursor.fetchone())["approval_status"] == "approving"
+
+
+@pytest.mark.asyncio
+async def test_atomic_claim_second_caller_loses(db):
+    iid = await _log_pending(db, email_id="eid-race2")
+    assert await atomically_claim_for_approval(db, iid) is True
+    # Second caller cannot claim - already in 'approving'
+    assert await atomically_claim_for_approval(db, iid) is False
+
+
+@pytest.mark.asyncio
+async def test_atomic_claim_fails_on_rejected_draft(db):
+    iid = await _log_pending(db, email_id="eid-race3")
+    await update_approval_status(db, iid, "rejected", approved_by="paulius")
+    # Can't claim a rejected draft
+    assert await atomically_claim_for_approval(db, iid) is False
+
+
+@pytest.mark.asyncio
+async def test_restore_pending_after_failed_send(db):
+    iid = await _log_pending(db, email_id="eid-restore")
+    await atomically_claim_for_approval(db, iid)
+    await restore_pending_after_failed_send(db, iid)
+    cursor = await db.execute(
+        "SELECT approval_status FROM interactions WHERE id = ?", (iid,)
+    )
+    assert (await cursor.fetchone())["approval_status"] == "pending"
+    # Now claimable again
+    assert await atomically_claim_for_approval(db, iid) is True

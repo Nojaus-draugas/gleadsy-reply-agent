@@ -188,3 +188,59 @@ async def test_conversation_view_shows_pending_badge(client_with_db):
     r = await client.get("/conversation/p@acme.fr/c1")
     assert r.status_code == 200
     assert "Laukia approval" in r.text
+
+
+@pytest.mark.asyncio
+async def test_approve_returns_409_on_second_concurrent_click(client_with_db):
+    client, db = client_with_db
+    iid = await _seed_pending(db)
+    send_calls = {"count": 0}
+    async def mock_send(**kwargs):
+        send_calls["count"] += 1
+        return {}
+    with patch("main.send_reply", new=mock_send):
+        # First call wins - should succeed
+        r1 = await client.post(f"/api/approve/{iid}", json={})
+        # Immediately call again - draft is now 'sent', not pending. Expected 404 or 409.
+        r2 = await client.post(f"/api/approve/{iid}", json={})
+    assert r1.status_code == 200
+    assert r2.status_code in (404, 409)  # pending row gone on second call
+    assert send_calls["count"] == 1  # Instantly was only called once
+
+
+@pytest.mark.asyncio
+async def test_approve_restores_pending_on_instantly_failure(client_with_db):
+    client, db = client_with_db
+    iid = await _seed_pending(db)
+    async def failing_send(**kwargs):
+        raise RuntimeError("Instantly down")
+    with patch("main.send_reply", new=failing_send):
+        r = await client.post(f"/api/approve/{iid}", json={})
+    assert r.status_code == 502
+    # Draft must be back to pending so user can retry
+    cursor = await db.execute(
+        "SELECT approval_status FROM interactions WHERE id = ?", (iid,)
+    )
+    assert (await cursor.fetchone())["approval_status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_returns_409_if_already_approved(client_with_db):
+    client, db = client_with_db
+    iid = await _seed_pending(db)
+    # Simulate approval happening between modal open and rewrite
+    from db.database import update_approval_status
+    await update_approval_status(db, iid, "sent", approved_by="paulius")
+
+    with patch("main.rewrite_draft", new=AsyncMock()) as mock_rw, \
+         patch("main.translate_to_lt", new=AsyncMock()):
+        main.clients["gleadsy_fr"] = {
+            "client_id": "gleadsy_fr", "client_name": "Gleadsy FR",
+            "tone": {"language": "fr", "sign_off": "Cordialement", "sender_name": "P", "personality": "x"},
+            "approval_required": True,
+        }
+        r = await client.post(f"/api/edit_draft/{iid}",
+                               json={"lt_instruction": "anything"})
+    # Should NOT have called Claude - spec says guard first
+    mock_rw.assert_not_called()
+    assert r.status_code in (404, 409)
