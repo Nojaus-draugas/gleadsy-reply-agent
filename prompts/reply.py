@@ -25,7 +25,7 @@ Tikslas - natūraliai vesti pokalbį link trumpo susitikimo.
 {client['pricing']}
 
 ## Tonas
-- Kalba: {effective_language} (jei "auto" - detektuok iš prospect'o žinutės kalbos: LT/FR/EN)
+- Kalba: {effective_language}
 - Kreipinys: {client['tone']['addressing']}
 - Stilius: {client['tone']['personality']}
 - Max ilgis: {max_sent} sakiniai
