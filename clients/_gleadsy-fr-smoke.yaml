@@ -1,0 +1,69 @@
+# gleadsy-fr-smoke.yaml - SMOKE TEST FIXTURE (rename to remove _ prefix to activate)
+client_id: "gleadsy-fr-smoke"
+client_name: "Gleadsy (FR smoke test)"
+
+approval_required: true
+
+campaigns:
+  - id: "REPLACE-WITH-REAL-FR-CAMPAIGN-UUID"
+    language: "fr"
+    name: "Gleadsy FR smoke test"
+
+company_description: |
+  Gleadsy - digital marketing agency that helps B2B companies acquire more clients
+  through cold email campaigns and Google Ads.
+
+service_offering: |
+  - Cold email outreach
+  - Google Ads management + landing page creation
+  Full campaign management from strategy to results.
+
+value_proposition: |
+  We guarantee 5 qualified meetings per month or we refund.
+
+pricing: |
+  - Cold outreach: 800 EUR/month + VAT (starting)
+  - Google Ads + landing page: 700 EUR/month + VAT
+  - Both combined: 1300 EUR/month + VAT
+
+target_audience: |
+  B2B service company founders, 5-50 employees, France.
+
+meeting:
+  participant_from_client: "Paulius, Gleadsy founder"
+  purpose: "Short consultation about client acquisition"
+  duration_minutes: 30
+  google_calendar_id: "primary"
+  working_hours:
+    start: "09:00"
+    end: "17:00"
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  buffer_minutes: 15
+  advance_days: 7
+  slots_to_offer: 3
+
+faq:
+  - question: "Combien ca coute?"
+    answer: "Le prix depend de vos besoins. Discutons-en lors d'un court appel."
+  - question: "Comment ca marche?"
+    answer: "Nous creons une campagne ciblee et gerons tout le processus. Vous recevez des rendez-vous qualifies dans votre calendrier."
+
+boundaries:
+  cannot_promise:
+    - "Specific result numbers (except 5-meeting guarantee)"
+    - "Discounts or special pricing"
+    - "Technical details unknown"
+  escalate_topics:
+    - "Legal questions"
+    - "Detailed technical questions"
+
+tone:
+  formality: "semi-formal"
+  addressing: "vous"
+  language: "fr"
+  personality: |
+    Friendly, concise, no corporate jargon. Addresses objections directly.
+    Guides toward a meeting without pressure.
+  max_reply_length_sentences: 5
+  sign_off: "Cordialement"
+  sender_name: "Paulius"
