@@ -158,3 +158,33 @@ async def test_edit_draft_rewrites_and_saves(client_with_db):
     history = json.loads(row["edit_history"])
     assert len(history) == 1
     assert history[0]["lt_instruction"] == "Pridėk klausimą"
+
+
+@pytest.mark.asyncio
+async def test_replies_page_shows_pending_count_badge(client_with_db):
+    client, db = client_with_db
+    await _seed_pending(db, email_id="eid-a")
+    await _seed_pending(db, email_id="eid-b")
+    r = await client.get("/replies")
+    assert r.status_code == 200
+    assert "Laukia approval" in r.text
+    # Count should appear somewhere in the badge - either "(2)" or ">2<"
+    assert "(2)" in r.text or ">2<" in r.text
+
+
+@pytest.mark.asyncio
+async def test_replies_page_no_badge_when_zero_pending(client_with_db):
+    client, db = client_with_db
+    r = await client.get("/replies")
+    assert r.status_code == 200
+    # Badge still rendered but with 0 (not red)
+    assert "Laukia approval" in r.text
+
+
+@pytest.mark.asyncio
+async def test_conversation_view_shows_pending_badge(client_with_db):
+    client, db = client_with_db
+    await _seed_pending(db, email_id="eid-conv")
+    r = await client.get("/conversation/p@acme.fr/c1")
+    assert r.status_code == 200
+    assert "Laukia approval" in r.text

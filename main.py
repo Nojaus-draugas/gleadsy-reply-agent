@@ -702,6 +702,20 @@ async def replies_dashboard(request: Request):
 
     test_mode_label = "TEST_MODE" if config.TEST_MODE else "LIVE"
 
+    pending_count = await get_pending_count(db)
+    if pending_count > 0:
+        pending_badge_html = (
+            f'<a href="/pending" style="padding:8px 14px;background:#c62828;color:white;'
+            f'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">'
+            f'⏳ Laukia approval ({pending_count})</a>'
+        )
+    else:
+        pending_badge_html = (
+            '<a href="/pending" style="padding:8px 14px;background:#e0e0e0;color:#333;'
+            'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px">'
+            '⏳ Laukia approval (0)</a>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Gleadsy Reply Agent - Dashboard</title>
 <meta http-equiv="refresh" content="30">
@@ -744,6 +758,7 @@ tr:hover {{ background: #f0f7ff; }}
 <div class="header">
     <h1>Gleadsy Reply Agent</h1>
     <div style="display:flex;gap:8px;align-items:center">
+        {pending_badge_html}
         <a href="/learning" style="padding:8px 14px;background:#1565c0;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">🎓 Mokymosi progresas</a>
         <form method="POST" action="/logout" style="margin:0">
             <button type="submit" class="logout-btn">Atsijungti</button>
@@ -817,7 +832,7 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
         "SELECT id, created_at, classification, confidence, classification_reasoning, "
         "prospect_message, agent_reply, was_sent, human_rating, "
         "quality_score, quality_summary, quality_issues, improvement_suggestion, "
-        "few_shots_used, thread_position "
+        "few_shots_used, thread_position, approval_status "
         "FROM interactions WHERE lead_email = ? AND campaign_id = ? ORDER BY created_at ASC",
         (lead_email, campaign_id),
     )
@@ -932,13 +947,24 @@ async def conversation_view(lead_email: str, campaign_id: str, request: Request)
                 <div class="improve-body">{improvement}</div>
             </div>'''
 
+            approval_status = r.get("approval_status")
+            pending_html = ""
+            if approval_status == "pending":
+                pending_html = (
+                    '<div style="margin-top:8px;padding:8px 12px;background:#fff3e0;'
+                    'border-left:3px solid #f9a825;border-radius:4px;font-size:12px">'
+                    '⏳ <strong>Laukia approval</strong> - '
+                    f'<a href="/pending#draft-{r["id"]}" style="color:#1565c0">Eiti į approval</a>'
+                    '</div>'
+                )
+
             messages_html += f"""
         <div class="msg agent-msg">
             <div class="msg-header">
                 <strong>Agent</strong> - {sent_text}{rating_icon}
                 <span class="q-badge-inline" style="color:{q_badge_color};background:{q_badge_bg};margin-left:8px">{quality_score if quality_score is not None else "-"}/10</span>
             </div>
-            <div class="msg-body">{agent_reply}</div>{improve_html}{why_html}
+            <div class="msg-body">{agent_reply}</div>{improve_html}{why_html}{pending_html}
         </div>"""
 
     safe_email = html_mod.escape(lead_email)
