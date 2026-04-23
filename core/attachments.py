@@ -8,11 +8,25 @@ Native attachment per Instantly API v2 (be gleadsy.com URL'o).
 import base64
 import logging
 import re
+import unicodedata
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 ATTACHMENTS_DIR = Path("/app/attachments")
+
+
+def _normalize(text: str) -> str:
+    """Normalize text for matching: lowercase + strip diacritics (š->s, ą->a, è->e).
+
+    Ensures 'prisegu kainorašt' matches 'prisegu kainorast' (ASCII form).
+    """
+    if not text:
+        return ""
+    # NFD decomposes accented chars (š -> s+combining_caron), then strip combiners
+    nfd = unicodedata.normalize("NFD", text)
+    ascii_text = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return ascii_text.lower()
 
 
 def detect_attachments(
@@ -33,19 +47,19 @@ def detect_attachments(
     if not attachments_cfg:
         return []
 
-    reply_lower = agent_reply.lower()
+    reply_normalized = _normalize(agent_reply)
     result = []
 
     for attachment_key, cfg in attachments_cfg.items():
         if not isinstance(cfg, dict):
             continue
 
-        # 1) Patikrinti ar reply text contains trigger phrase (pagal kalbą)
+        # 1) Patikrinti ar reply text contains trigger phrase (pagal kalbą, diacritic-insensitive)
         triggers = cfg.get("trigger_phrases", {})
         lang_triggers = triggers.get(prospect_language) or triggers.get("lt") or []
         matched = False
         for phrase in lang_triggers:
-            if phrase.lower() in reply_lower:
+            if _normalize(phrase) in reply_normalized:
                 matched = True
                 logger.info(f"Attachment trigger matched: '{phrase}' (lang={prospect_language}, key={attachment_key})")
                 break
