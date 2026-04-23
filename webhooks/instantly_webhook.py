@@ -10,6 +10,7 @@ from core.slack_notifier import notify_reply_sent, notify_escalation, notify_unk
 from core.self_improver import get_best_examples, get_anti_patterns
 from core.quality_reviewer import review_quality
 from core.hallucination_guard import check_reply as check_hallucinations
+from core.attachments import detect_attachments, detect_language_from_text
 from core.client_loader import get_client_by_campaign, get_campaign_language
 from core.translation import translate_to_lt
 from core.language_detection import detect_language
@@ -606,8 +607,30 @@ async def _process_reply(payload: dict, db, clients: dict, confidence_threshold:
             notify_interested_email(lead_email, client_id, reply_text, agent_reply)
         was_sent = False
     else:
+        # Auto-detect attachments based on agent reply text + prospect language
+        prospect_lang = "lt"
         try:
-            await send_reply(payload.get("email_account", ""), email_id, payload.get("reply_subject", ""), agent_reply)
+            from core.language_detection import detect_language
+            prospect_lang = detect_language(reply_text) or "lt"
+        except Exception:
+            prospect_lang = detect_language_from_text(reply_text)
+
+        try:
+            attachments_to_send = detect_attachments(client_config, agent_reply, prospect_lang)
+        except Exception as e:
+            logger.error(f"attachment detection failed: {e}")
+            attachments_to_send = []
+
+        try:
+            await send_reply(
+                payload.get("email_account", ""),
+                email_id,
+                payload.get("reply_subject", ""),
+                agent_reply,
+                attachments=attachments_to_send or None,
+            )
+            if attachments_to_send:
+                logger.info(f"Sent reply with {len(attachments_to_send)} attachment(s) to {lead_email}")
         except Exception as e:
             await notify_error("instantly_send_failed", str(e))
             await log_interaction(db, {

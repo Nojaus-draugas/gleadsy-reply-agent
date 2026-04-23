@@ -12,8 +12,17 @@ def _headers():
     return {"Authorization": f"Bearer {config.INSTANTLY_API_KEY}"}
 
 
-async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_text: str) -> dict:
+async def send_reply(
+    email_account: str,
+    reply_to_uuid: str,
+    subject: str,
+    body_text: str,
+    attachments: list[dict] | None = None,
+) -> dict:
     """Send reply via Instantly API V2.
+
+    Args:
+        attachments: Optional list of dicts: [{"name": "file.pdf", "content": "<base64>", "type": "application/pdf"}]
 
     Retry policy is conservative to avoid double-sends:
     - 429 (rate limit): retry with exponential backoff (safe - request not accepted)
@@ -28,6 +37,9 @@ async def send_reply(email_account: str, reply_to_uuid: str, subject: str, body_
         "subject": subject,
         "body": {"text": body_text},
     }
+    if attachments:
+        payload["attachments"] = attachments
+        logger.info(f"Sending reply with {len(attachments)} attachment(s): {[a.get('name') for a in attachments]}")
     async with httpx.AsyncClient(timeout=30) as client:
         for attempt in range(3):
             try:

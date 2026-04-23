@@ -30,27 +30,39 @@ product_resources: |
      https://ibjoist.com/lt/i-joist-technologija/
      (šio puslapio apačioje matosi visos sijų nuotraukos)
 
-  2) PDF KATALOGAS / KAINORAŠTIS - kainos pagal metrą, H-200 iki H-450,
-     techniniai brėžiniai ir skerspjūviai. Pridedamas rankomis kaip priedas.
+  2) PDF KAINORAŠTIS - kainos pagal metrą, H-200 iki H-450, techniniai brėžiniai.
+     AUTOMATIŠKAI prisegamas jei į reply tekstą įtraukiama frazė:
+     - LT: "prisegu kainoraštį" arba "prisegu PDF"
+     - FR: "ci-joint le catalogue" arba "je vous joins"
+     - EN: "attaching pricelist" arba "find attached"
+     Sistema pati parenka teisingą kalbos PDF'ą pagal prospect'o žinutės kalbą.
 
   KADA KURĮ NAUDOTI:
 
   - Jei prospect'as prašo **nuotraukų** ar **pamatyti produktą** (pvz. "imeskit notraukas", "parodykite")
-    → Nukreipk į svetainę: "Geriausiai sijos matosi mūsų svetainėje šio puslapio apačioje:
-      https://ibjoist.com/lt/i-joist-technologija/"
-    → NEPRIDĖK PDF'o.
+    → Nukreipk į svetainę, NEPRIDĖK PDF'o.
 
   - Jei prospect'as prašo **kainų**, **techninės info** arba **katalogo**
-    → Pasiūlyk prisegti PDF: "Prisegu PDF'ą, kuriame surašytos kainos pagal metrą"
-    → SVARBU: Paulius turi RANKA pridėti PDF priedą prieš siunčiant.
+    → Į reply ĮTRAUK frazę "prisegu kainoraštį" (LT) / "je vous joins le catalogue" (FR) /
+      "attaching our pricelist" (EN) - sistema automatiškai prisegs PDF'ą.
 
-  - Jei prospect'as prašo ir nuotraukų IR info → nukreipk į svetainę + trumpą info, plus
-    gali paminėti: "Jei norėtumėte detalaus kainoraščio PDF - galiu prisegti."
+  - Jei prospect'as jau davė projekto specifiką (kiekis + aukštis)
+    → "Kęstuti, paskaičiuosime. Iki vakaro atsiųsiu tikslų pasiūlymą.
+      Tuo tarpu prisegu kainoraštį ;)" + PDF auto-prisegiamas.
 
-  FR: "Les photos de nos poutres sont visibles en bas de cette page :
-       https://ibjoist.com/lt/i-joist-technologija/"
-  EN: "You can see photos of our beams at the bottom of this page:
-       https://ibjoist.com/lt/i-joist-technologija/"
+# Automated attachments - base64 native priedas per Instantly API
+# Sistema skaito agent reply text + aptikta prospect'o kalba -> parenka teisingą PDF
+attachments:
+  pricelist:
+    trigger_phrases:
+      lt: ["prisegu kainorašt", "prisegu PDF", "prisegu kainoraštį", "siunčiu kainoraštį"]
+      en: ["attaching pricelist", "attaching price list", "find attached", "please find attached"]
+      fr: ["ci-joint", "je vous joins", "vous joins le catalogue", "vous trouverez en pièce jointe"]
+    files:
+      lt: "ibjoist_kainorastis_lt.pdf"
+      en: "ibjoist_pricelist_en.pdf"
+      fr: "ibjoist_prix_fr.pdf"
+    mime_type: "application/pdf"
 
 value_proposition: |
   I-sijos yra 40% lengvesnės nei masyvios medienos sijos, tikslių matmenų,
