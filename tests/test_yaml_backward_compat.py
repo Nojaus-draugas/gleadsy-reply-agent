@@ -100,8 +100,8 @@ tone:
 def test_legacy_yaml_loads(legacy_yaml):
     clients = load_clients(legacy_yaml)
     assert "legacy_client" in clients
-    # approval_required defaults to False
-    assert clients["legacy_client"].get("approval_required", False) is False
+    # approval_required defaults to True (drafts created, not auto-sent)
+    assert clients["legacy_client"]["approval_required"] is True
 
 
 def test_legacy_yaml_campaign_lookup(legacy_yaml):

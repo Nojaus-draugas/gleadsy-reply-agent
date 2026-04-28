@@ -12,7 +12,7 @@ REQUIRED_FIELDS = [
 def load_clients(clients_dir: Path) -> dict:
     """Load all YAML client configs from directory. Returns {client_id: config}.
 
-    Each client dict gets `approval_required: bool` (default False) explicitly set.
+    Each client dict gets `approval_required: bool` (default True) explicitly set.
     Campaign entries are left as-is (plain string or dict with `id` + `language`).
     """
     clients = {}
@@ -26,7 +26,7 @@ def load_clients(clients_dir: Path) -> dict:
         for field in REQUIRED_FIELDS:
             if field not in config:
                 raise ValueError(f"Client {yaml_file.name} missing required field: {field}")
-        config.setdefault("approval_required", False)
+        config.setdefault("approval_required", True)
         clients[config["client_id"]] = config
     return clients
 
